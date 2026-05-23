@@ -1,0 +1,46 @@
+name: fibey-agent
+metadata:
+  template: fibey-agent
+
+# ---------------------------------------------------------------------------
+# Infrastructure
+# ---------------------------------------------------------------------------
+# This azure.yaml targets the "fibey-apps" resource group.
+# The hosted agent & Toolbox live in a separate resource group
+# ("fibey-agent") that is managed outside of azd. See infra-agent/README.md.
+# ---------------------------------------------------------------------------
+infra:
+  provider: bicep
+  path: infra
+  module: main
+services:
+  ui:
+    project: ui
+    language: docker
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+  gateway:
+    project: .
+    language: docker
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+  inventory-mcp:
+    project: services/inventory-mcp
+    language: docker
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+  work-orders-api:
+    project: services/work-orders-api
+    language: docker
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+  status-dashboard:
+    project: services/status-dashboard
+    language: docker
+    host: containerapp
+    docker:
+      path: ./Dockerfile
