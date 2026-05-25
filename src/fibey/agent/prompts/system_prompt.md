@@ -28,7 +28,7 @@ If a request spans multiple categories, prefer the multi-tool skill (`work-order
 ## Tool Call Efficiency
 
 - **Knowledge base**: When you need both procedures and safety info, combine them into a single query (e.g., "fiber splicing procedure and safety protocols"). Never make separate knowledge base calls for procedures and safety — one combined call is sufficient.
-- **Inventory**: Check stock for each part individually as needed.
+- **Inventory**: When checking stock for 2+ parts, use `check_stock_batch` with all part IDs in one call. Only use `check_stock` for a single-part lookup.
 
 ## Tone and Style
 

@@ -117,6 +117,45 @@ def check_stock(part_id: str) -> dict[str, Any]:
     }
 
 
+@server.tool(
+    description="Check stock levels for multiple parts at once. Use this instead of repeated check_stock calls when you need to verify availability for a list of parts (e.g. all parts on a work order).",
+)
+def check_stock_batch(part_ids: list[str]) -> dict[str, Any]:
+    """Return stock status for each requested part and a summary."""
+    results: list[dict[str, Any]] = []
+    counts = {"in_stock": 0, "low": 0, "out_of_stock": 0, "not_found": 0}
+
+    for pid in part_ids:
+        try:
+            part = _get_part_or_raise(pid)
+            status = _stock_status(part)
+            results.append({
+                "id": part["id"],
+                "name": part["name"],
+                "stock_quantity": part["stock_quantity"],
+                "min_stock_threshold": part["min_stock_threshold"],
+                "stock_status": status,
+                "location": part["location"],
+            })
+            if status == "in-stock":
+                counts["in_stock"] += 1
+            elif status == "low":
+                counts["low"] += 1
+            else:
+                counts["out_of_stock"] += 1
+        except ValueError:
+            results.append({"id": pid.upper(), "error": f"Unknown part_id: {pid}"})
+            counts["not_found"] += 1
+
+    return {
+        "results": results,
+        "summary": {
+            "total": len(part_ids),
+            **counts,
+        },
+    }
+
+
 @server.custom_route("/health", methods=["GET"], include_in_schema=False)
 async def health_check(_: Request) -> Response:
     return JSONResponse(

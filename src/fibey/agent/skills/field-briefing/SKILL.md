@@ -26,7 +26,8 @@ the knowledge base for relevant procedures.
 
 ### Step 2: Check Parts Availability
 
-For each part in `parts_needed`, use inventory tools to check stock availability.
+Use `check_stock_batch` with all `part_id` values from `parts_needed` in a single call.
+Do NOT call `check_stock` individually for each part.
 Classify each as ✅ Ready, ⚠️ Partial, or ❌ Unavailable.
 
 ### Step 3: Search the Knowledge Base

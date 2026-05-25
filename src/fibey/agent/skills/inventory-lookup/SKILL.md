@@ -26,6 +26,7 @@ Use this skill when the technician asks about parts, stock, equipment, or availa
 | Browse by category | `list_parts` with `category` filter | "show all connectors" |
 | Specific part by ID | `get_part_details` with `part_id` | "details on FIB-012" |
 | Stock level for a known part | `check_stock` with `part_id` | "how many FIB-042 in stock?" |
+| Stock levels for multiple parts | `check_stock_batch` with `part_ids` list | "check stock for FIB-003 and FIB-012" |
 
 **Categories available:** Connectors, Cables, Splitters, Splice Equipment, Test Equipment
 

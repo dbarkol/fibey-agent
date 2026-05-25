@@ -34,6 +34,8 @@ function parseToolInfo(raw: string): { name: string; icon: string; category: str
 
   // Inventory — match verbose Toolbox MCP names
   if (lower.includes("inventory") || lower.includes("check_stock") || lower.includes("search_parts") || lower.includes("get_part") || lower.includes("list_parts")) {
+    if (lower.includes("check_stock_batch"))
+      return { name: "Check Stock (Batch)", icon: "inventory_2", category: "inventory", source: "Inventory MCP" };
     if (lower.includes("check_stock"))
       return { name: "Check Stock", icon: "inventory_2", category: "inventory", source: "Inventory MCP" };
     if (lower.includes("search"))

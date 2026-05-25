@@ -28,10 +28,12 @@ Extract the `parts_needed` list — each entry has a `part_id` and `quantity`.
 If the work order has no `parts_needed`, skip to Step 3 and note that no parts
 are listed for this WO.
 
-### Step 2: Check Stock for Each Part
+### Step 2: Check Stock for All Parts
 
-For each part in `parts_needed`, use the inventory tool `check_stock` to verify 
-availability. Compare the required quantity against the available stock.
+Use `check_stock_batch` with all `part_id` values from `parts_needed` in a single call.
+This returns stock status for every part at once — do NOT call `check_stock` individually.
+
+Compare the required quantity against the available stock for each part.
 
 Classify each part:
 - ✅ **Ready** — stock ≥ required quantity
