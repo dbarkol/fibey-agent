@@ -7,9 +7,12 @@ export interface ChatMessage {
 export interface ActivityEvent {
   id: string;
   tool: string;
+  call_id?: string;
   status: "pending" | "running" | "complete" | "error";
   detail: string;
   timestamp: number;
+  args?: string;
+  result?: string;
 }
 
 export interface StreamCallbacks {
@@ -75,8 +78,11 @@ export async function sendMessage(
             case "activity":
               callbacks.onActivity({
                 tool: data["tool"] ?? "",
+                call_id: data["call_id"],
                 status: (data["status"] ?? "running") as ActivityEvent["status"],
                 detail: data["detail"] ?? "",
+                args: data["args"],
+                result: data["result"],
               });
               break;
             case "error":

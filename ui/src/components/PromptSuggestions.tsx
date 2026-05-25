@@ -5,48 +5,52 @@ interface Suggestion {
 
 const suggestions: Suggestion[] = [
   {
-    prompt: "What open work orders do we have right now?",
+    prompt: "Pull up work order WO-003 and tell me what parts are needed.",
     tags: [
-      { label: "work-orders", color: "red" },
-      { label: "Work Orders API", color: "green" },
-    ],
-  },
-  {
-    prompt: "Do we have fiber splice trays and fusion splicers in stock?",
-    tags: [
-      { label: "inventory-check", color: "red" },
-      { label: "Inventory MCP", color: "green" },
-    ],
-  },
-  {
-    prompt: "What is the procedure for emergency fiber cuts?",
-    tags: [
-      { label: "knowledge-retrieval", color: "red" },
-      { label: "FoundryIQ", color: "green" },
-    ],
-  },
-  {
-    prompt:
-      "I need to prepare for work order WO-001. What parts does it need and do we have them in stock?",
-    tags: [
-      { label: "cross-tool", color: "red" },
+      { label: "work-order-preparation", color: "red" },
       { label: "Work Orders API", color: "green" },
       { label: "Inventory MCP", color: "yellow" },
     ],
   },
   {
-    prompt: "Show me all critical priority work orders and who is assigned to them",
+    prompt: "Do we have OTDR test equipment in stock? What models are available?",
     tags: [
-      { label: "work-orders", color: "red" },
-      { label: "Work Orders API", color: "green" },
+      { label: "inventory-lookup", color: "red" },
+      { label: "Inventory MCP", color: "green" },
+    ],
+  },
+  {
+    prompt: "What are the proper procedures for fusion splicing single-mode fiber?",
+    tags: [
+      { label: "knowledge-retrieval", color: "red" },
+      { label: "FoundryIQ", color: "green" },
     ],
   },
   {
     prompt:
-      "What safety guidelines should a technician follow for aerial fiber installation?",
+      "Check the parts list for WO-005 and tell me if we have everything in stock.",
+    tags: [
+      { label: "work-order-preparation", color: "red" },
+      { label: "Work Orders API", color: "green" },
+      { label: "Inventory MCP", color: "yellow" },
+    ],
+  },
+  {
+    prompt:
+      "What safety protocols should a technician review before performing aerial cable installation?",
     tags: [
       { label: "knowledge-retrieval", color: "red" },
       { label: "FoundryIQ", color: "green" },
+    ],
+  },
+  {
+    prompt:
+      "Give me a full field briefing for WO-007 — parts availability, relevant procedures, and safety guidelines.",
+    tags: [
+      { label: "field-briefing", color: "red" },
+      { label: "Work Orders API", color: "green" },
+      { label: "Inventory MCP", color: "yellow" },
+      { label: "FoundryIQ", color: "yellow" },
     ],
   },
 ];

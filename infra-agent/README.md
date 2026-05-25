@@ -31,7 +31,7 @@ agent to the FoundryIQ knowledge base MCP endpoint.
 
 | Connection | Category | Auth | Purpose |
 |------------|----------|------|---------|
-| `kb-fibey-field-ops-kb` | `RemoteTool` | `ProjectManagedIdentity` | Connects the hosted agent to `https://fibey-apps-search.search.windows.net/knowledgebases/fibey-field-ops-kb/mcp` |
+| `kb-fibey-field-ops-kb` | `RemoteTool` | `ProjectManagedIdentity` | Connects the hosted agent to `https://<search-service>.search.windows.net/knowledgebases/fibey-field-ops-kb/mcp` |
 
 - Connections prefixed with `kb-` are reserved for knowledge base MCP
   connections.

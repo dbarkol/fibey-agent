@@ -48,8 +48,11 @@ async def _run_local(message: str, session_id: str) -> AsyncGenerator[str, None]
             elif event["type"] == "activity":
                 yield _sse("activity", {
                     "tool": event.get("tool", ""),
+                    "call_id": event.get("call_id", ""),
                     "status": event.get("status", ""),
                     "detail": event.get("detail", ""),
+                    "args": event.get("args", ""),
+                    "result": event.get("result", ""),
                 })
             elif event["type"] == "citation":
                 yield _sse("citation", {
@@ -79,8 +82,11 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
             elif event["type"] == "activity":
                 yield _sse("activity", {
                     "tool": event.get("tool", ""),
+                    "call_id": event.get("call_id", ""),
                     "status": event.get("status", ""),
                     "detail": event.get("detail", ""),
+                    "args": event.get("args", ""),
+                    "result": event.get("result", ""),
                 })
             elif event["type"] == "citation":
                 yield _sse("citation", {

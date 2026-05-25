@@ -3,10 +3,14 @@ Single agent definition with Foundry Toolbox MCP connection.
 
 The agent calls the Toolbox as one MCP endpoint; the Toolbox dispatches
 to individual tools (FoundryIQ, WorkIQ, custom MCP, FabricIQ) behind the scenes.
+
+The knowledge base is queried directly via Azure AI Search semantic search,
+bypassing the Toolbox's vector_semantic_hybrid requirement.
 """
 
 import asyncio
 import os
+import json
 import logging
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -18,15 +22,24 @@ from agent_framework import (
     Agent,
     AgentResponseUpdate,
     AgentSession,
+    FileSkillsSource,
+    FunctionTool,
     MCPStreamableHTTPTool,
     ResponseStream,
+    SkillsProvider,
 )
 from agent_framework.foundry import FoundryChatClient
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.md"
+SKILLS_PATH = Path(__file__).parent / "skills"
 _TOKEN_SCOPE = "https://ai.azure.com/.default"
+
+# Azure AI Search configuration for direct KB queries
+_SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT", "")
+_SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "foundry-iq-docs-index")
+_SEARCH_API_KEY = os.getenv("AZURE_SEARCH_API_KEY", "")
 
 
 def _load_system_prompt() -> str:
@@ -94,6 +107,69 @@ def _create_toolbox_mcp(credential) -> MCPStreamableHTTPTool | None:
     )
 
 
+async def knowledge_base_search(query: str, top: int = 5) -> str:
+    """Search the fiber optics field operations knowledge base.
+
+    Searches across procedures, safety protocols, troubleshooting guides,
+    equipment specs, cable types, installation standards, OTDR testing,
+    and network architecture documentation.
+
+    Args:
+        query: The search query describing what you need to find.
+        top: Maximum number of results to return (default 5).
+
+    Returns:
+        JSON string with search results including document name and content.
+    """
+    if not _SEARCH_API_KEY:
+        return json.dumps({"error": "AZURE_SEARCH_API_KEY not configured"})
+
+    search_url = f"{_SEARCH_ENDPOINT}/indexes/{_SEARCH_INDEX}/docs/search?api-version=2024-07-01"
+    payload = {
+        "search": query,
+        "queryType": "semantic",
+        "semanticConfiguration": "default",
+        "top": top,
+        "select": "content,metadata_storage_name",
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            search_url,
+            json=payload,
+            headers={"api-key": _SEARCH_API_KEY, "Content-Type": "application/json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    results = []
+    for doc in data.get("value", []):
+        results.append({
+            "source": doc.get("metadata_storage_name", "unknown"),
+            "content": doc.get("content", ""),
+        })
+
+    return json.dumps({"results": results, "count": len(results)})
+
+
+def _create_kb_search_tool() -> FunctionTool | None:
+    """Create the knowledge base search tool if search is configured."""
+    if not _SEARCH_API_KEY:
+        logger.warning("AZURE_SEARCH_API_KEY not set — running without KB search")
+        return None
+
+    return FunctionTool(
+        name="knowledge_base",
+        description=(
+            "Search the fiber optics field operations knowledge base. "
+            "Covers: splicing procedures, safety protocols, OTDR testing, "
+            "cable types, equipment specs, installation standards, "
+            "network architecture, and troubleshooting guides."
+        ),
+        func=knowledge_base_search,
+    )
+
+
 def create_agent() -> tuple[Agent, list]:
     """Create the agent with Foundry client and Toolbox MCP connection."""
     credential = _get_credential()
@@ -107,11 +183,21 @@ def create_agent() -> tuple[Agent, list]:
     if toolbox_mcp:
         tools.append(toolbox_mcp)
 
+    kb_tool = _create_kb_search_tool()
+    if kb_tool:
+        tools.append(kb_tool)
+
+    skills_provider = None
+    if SKILLS_PATH.is_dir():
+        skills_source = FileSkillsSource(SKILLS_PATH)
+        skills_provider = SkillsProvider(skills_source)
+
     agent = Agent(
         client=client,
         name="fibey",
         instructions=_load_system_prompt(),
         tools=tools,
+        context_providers=[skills_provider] if skills_provider else None,
     )
 
     return agent, tools
@@ -149,6 +235,7 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
         seen_calls: set[str] = set()
         seen_results: set[str] = set()
         call_id_to_name: dict[str, str] = {}
+        pending_args: dict[str, str] = {}
 
         async for update in stream:
             update: AgentResponseUpdate
@@ -164,24 +251,79 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                         tool_name = getattr(content, "tool_name", None) or getattr(content, "name", None) or "tool"
                         call_id = getattr(content, "call_id", None) or tool_name
                         call_id_to_name[call_id] = tool_name
-                        if call_id not in seen_calls:
-                            seen_calls.add(call_id)
+                        # Accumulate arguments across streaming chunks
+                        raw_args = getattr(content, "arguments", None) or ""
+                        if isinstance(raw_args, dict):
+                            import json as _json
+                            raw_args = _json.dumps(raw_args)
+                        if call_id not in pending_args:
+                            pending_args[call_id] = raw_args
+                            # Emit an early "running" activity so the UI shows a spinner
                             yield {
                                 "type": "activity",
                                 "tool": tool_name,
+                                "call_id": call_id,
                                 "status": "running",
                                 "detail": f"Calling {tool_name}...",
                             }
+                        else:
+                            pending_args[call_id] += raw_args
 
                     elif ctype in ("mcp_server_tool_result", "function_result"):
                         call_id = getattr(content, "call_id", None) or ""
                         tool_name = call_id_to_name.get(call_id) or getattr(content, "tool_name", None) or getattr(content, "name", None) or "tool"
+
+                        # Emit the "running" activity with full accumulated args
+                        if call_id not in seen_calls:
+                            seen_calls.add(call_id)
+                            args_str = pending_args.get(call_id, "")
+                            import json as _json
+                            detail = f"Calling {tool_name}..."
+                            if tool_name == "load_skill":
+                                try:
+                                    parsed = _json.loads(args_str) if args_str else {}
+                                    skill_name = parsed.get("skill_name", "")
+                                    if skill_name:
+                                        detail = f"Loading skill: {skill_name}"
+                                except Exception:
+                                    pass
+                            else:
+                                try:
+                                    parsed = _json.loads(args_str) if args_str else {}
+                                    if isinstance(parsed, dict):
+                                        for key in ("work_order_id", "part_id", "query"):
+                                            val = parsed.get(key)
+                                            if val:
+                                                detail = f"Calling {tool_name} ({key}={val})"
+                                                break
+                                except Exception:
+                                    pass
+                            yield {
+                                "type": "activity",
+                                "tool": tool_name,
+                                "call_id": call_id,
+                                "status": "running",
+                                "detail": detail,
+                                "args": args_str,
+                            }
+
+                        # Emit the "complete" activity
                         if call_id not in seen_results:
                             seen_results.add(call_id)
                             yield {
                                 "type": "activity",
                                 "tool": tool_name,
+                                "call_id": call_id,
                                 "status": "complete",
                                 "detail": f"Completed {tool_name}",
                             }
+
+                    else:
+                        # Log unknown content types for debugging
+                        import logging
+                        logging.getLogger(__name__).debug(
+                            "Unknown content type: %s attrs=%s",
+                            ctype,
+                            {k: str(v)[:100] for k, v in vars(content).items()} if hasattr(content, '__dict__') else str(content)[:200]
+                        )
 

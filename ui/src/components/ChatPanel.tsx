@@ -20,7 +20,7 @@ export default function ChatPanel({ messages, isStreaming, onSend }: ChatPanelPr
   return (
     <div className="flex flex-1 flex-col">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div className="flex-1 overflow-y-auto px-4 py-6 bg-white dark:bg-gray-950">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center">
             <div className="text-center">
@@ -37,8 +37,10 @@ export default function ChatPanel({ messages, isStreaming, onSend }: ChatPanelPr
           </div>
         ) : (
           <div className="mx-auto max-w-3xl space-y-4">
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+            {messages
+              .filter((msg) => msg.role === "user" || msg.content)
+              .map((msg) => (
+              <MessageBubble key={msg.id} message={msg} isStreaming={isStreaming && msg === messages[messages.length - 1]} />
             ))}
             {isStreaming && (
               <div className="flex items-center gap-2 text-sm text-gray-400">
