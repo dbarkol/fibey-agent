@@ -2,10 +2,10 @@
 Single agent definition with Foundry Toolbox MCP connection.
 
 The agent calls the Toolbox as one MCP endpoint; the Toolbox dispatches
-to individual tools (FoundryIQ, WorkIQ, custom MCP, FabricIQ) behind the scenes.
-
-The knowledge base is queried directly via Azure AI Search semantic search,
-bypassing the Toolbox's vector_semantic_hybrid requirement.
+to individual tools (FoundryIQ, Work Orders OpenAPI, Inventory MCP) behind
+the scenes.  When the Toolbox is configured, FoundryIQ provides knowledge
+base retrieval; otherwise a local Azure AI Search function tool is used
+as a fallback.
 """
 
 import asyncio
@@ -183,9 +183,12 @@ def create_agent() -> tuple[Agent, list]:
     if toolbox_mcp:
         tools.append(toolbox_mcp)
 
-    kb_tool = _create_kb_search_tool()
-    if kb_tool:
-        tools.append(kb_tool)
+    # Only add the local KB tool when Toolbox is NOT configured
+    # (Toolbox provides knowledge_base via azure_ai_search / FoundryIQ)
+    if not toolbox_mcp:
+        kb_tool = _create_kb_search_tool()
+        if kb_tool:
+            tools.append(kb_tool)
 
     skills_provider = None
     if SKILLS_PATH.is_dir():
