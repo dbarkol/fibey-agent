@@ -87,7 +87,7 @@ def _get_hosted_token() -> str:
             tenant_id=os.getenv("AZURE_TENANT_ID"), process_timeout=30
         ),
     )
-    return cred.get_token("https://ai.azure.com/.default").token
+    return cred.get_token("https://cognitiveservices.azure.com/.default").token
 
 
 async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None]:
