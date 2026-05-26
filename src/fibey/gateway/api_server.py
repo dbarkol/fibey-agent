@@ -4,9 +4,11 @@ import json
 import logging
 from typing import AsyncGenerator
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from azure.identity import AzureDeveloperCliCredential, DefaultAzureCredential
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,6 +29,13 @@ app.add_middleware(
 sessions: dict[str, dict] = {}
 
 AGENT_MODE = os.getenv("AGENT_MODE", "local")
+
+# Hosted agent config
+HOSTED_AGENT_ENDPOINT = os.getenv("HOSTED_AGENT_ENDPOINT", "")
+HOSTED_AGENT_NAME = os.getenv("HOSTED_AGENT_NAME", "fibey-agent")
+
+# Session-to-agent-session mapping for hosted mode conversation continuity
+_hosted_sessions: dict[str, str] = {}
 
 
 def _sse(event: str, data: dict | str) -> str:
@@ -66,18 +75,141 @@ async def _run_local(message: str, session_id: str) -> AsyncGenerator[str, None]
     yield _sse("done", "[DONE]")
 
 
-async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None]:
-    """Proxy to the Foundry-hosted agent.
+def _get_hosted_token() -> str:
+    """Get a bearer token for the Foundry hosted agent endpoint."""
+    try:
+        cred = AzureDeveloperCliCredential(
+            tenant_id=os.getenv("AZURE_TENANT_ID"), process_timeout=30
+        )
+        return cred.get_token("https://ai.azure.com/.default").token
+    except Exception:
+        cred = DefaultAzureCredential()
+        return cred.get_token("https://ai.azure.com/.default").token
 
-    Note: When the agent is deployed as a hosted agent, it runs via
-    ResponsesHostServer and clients talk to the Foundry Responses API
-    directly — this gateway proxy is not used. This stub remains for
-    local testing of the hosted mode configuration.
-    """
-    yield _sse("error", {
-        "message": "Hosted mode is active. The agent runs via Foundry Responses API — "
-                   "connect to the Foundry project endpoint directly, not through this gateway."
-    })
+
+async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None]:
+    """Proxy to the Foundry-hosted agent and translate Responses API streaming
+    into the gateway SSE format expected by the UI."""
+    endpoint = HOSTED_AGENT_ENDPOINT
+    if not endpoint:
+        yield _sse("error", {"message": "HOSTED_AGENT_ENDPOINT not configured"})
+        yield _sse("done", "[DONE]")
+        return
+
+    try:
+        token = _get_hosted_token()
+    except Exception as exc:
+        yield _sse("error", {"message": f"Auth failed: {exc}"})
+        yield _sse("done", "[DONE]")
+        return
+
+    url = (
+        f"{endpoint.rstrip('/')}/agents/{HOSTED_AGENT_NAME}/endpoint"
+        f"/protocols/openai/responses?api-version=2025-11-15-preview"
+    )
+
+    body: dict = {"input": message, "stream": True}
+
+    # Attach agent_session_id for conversation continuity
+    agent_session_id = _hosted_sessions.get(session_id)
+    if agent_session_id:
+        body["previous_response_id"] = agent_session_id
+
+    seen_call_ids: set[str] = set()
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST",
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                content=json.dumps(body),
+            ) as resp:
+                if resp.status_code != 200:
+                    error_body = await resp.aread()
+                    yield _sse("error", {"message": f"Hosted agent error {resp.status_code}: {error_body.decode()[:300]}"})
+                    yield _sse("done", "[DONE]")
+                    return
+
+                buffer = ""
+                async for chunk in resp.aiter_text():
+                    buffer += chunk
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        line = line.strip()
+
+                        if not line.startswith("data: "):
+                            continue
+
+                        raw = line[6:]
+                        if raw == "[DONE]":
+                            break
+
+                        try:
+                            event = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+
+                        event_type = event.get("type", "")
+
+                        # Text deltas
+                        if event_type == "response.output_text.delta":
+                            delta = event.get("delta", "")
+                            if delta:
+                                yield _sse("delta", {"content": delta})
+
+                        # MCP / function call started
+                        elif event_type == "response.output_item.added":
+                            item = event.get("item", {})
+                            item_type = item.get("type", "")
+                            call_id = item.get("call_id", "") or item.get("id", "")
+
+                            if item_type in ("mcp_call", "function_call") and call_id not in seen_call_ids:
+                                seen_call_ids.add(call_id)
+                                tool_name = item.get("name", "tool")
+                                args = item.get("arguments", "")
+                                yield _sse("activity", {
+                                    "tool": tool_name,
+                                    "call_id": call_id,
+                                    "status": "running",
+                                    "detail": f"Calling {tool_name}",
+                                    "args": args,
+                                    "result": "",
+                                })
+
+                        # MCP / function call output
+                        elif event_type == "response.output_item.done":
+                            item = event.get("item", {})
+                            item_type = item.get("type", "")
+                            call_id = item.get("call_id", "") or item.get("id", "")
+
+                            if item_type in ("mcp_call_output", "function_call_output"):
+                                output = item.get("output", "")
+                                yield _sse("activity", {
+                                    "tool": "",
+                                    "call_id": call_id,
+                                    "status": "complete",
+                                    "detail": "Done",
+                                    "args": "",
+                                    "result": output[:2000] if isinstance(output, str) else json.dumps(output)[:2000],
+                                })
+
+                        # Capture agent_session_id and response_id for continuity
+                        elif event_type == "response.completed":
+                            response_obj = event.get("response", {})
+                            resp_id = response_obj.get("id", "")
+                            if resp_id:
+                                _hosted_sessions[session_id] = resp_id
+
+    except httpx.TimeoutException:
+        yield _sse("error", {"message": "Hosted agent request timed out"})
+    except Exception as exc:
+        logger.exception("Hosted agent proxy error")
+        yield _sse("error", {"message": f"Proxy error: {exc}"})
+
     yield _sse("done", "[DONE]")
 
 
