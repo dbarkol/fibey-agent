@@ -15,5 +15,6 @@ ui
 infra
 infra-agent
 services
-*.md
-!requirements.txt
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
