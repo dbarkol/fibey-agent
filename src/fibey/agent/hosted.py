@@ -22,10 +22,17 @@ import logging
 import os
 from pathlib import Path
 
-from agent_framework import Agent, SkillsProvider
+import httpx
+import mcp.types
+from agent_framework import Agent, MCPStreamableHTTPTool, SkillsProvider
 from agent_framework.foundry import FoundryChatClient
 from agent_framework_foundry_hosting import ResponsesHostServer
-from azure.identity import DefaultAzureCredential
+from azure.identity import (
+    AzureDeveloperCliCredential,
+    ChainedTokenCredential,
+    ManagedIdentityCredential,
+    get_bearer_token_provider,
+)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -37,6 +44,33 @@ SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.md"
 SKILLS_DIR = Path(__file__).parent / "skills"
 
 
+# ---------------------------------------------------------------------------
+# Workaround: Azure AI Search KB MCP returns resource content with uri: null
+# or uri: "", which fails pydantic AnyUrl validation in the MCP SDK.
+# Relax the uri field to accept any string (or None) so parsing succeeds.
+# ---------------------------------------------------------------------------
+for _cls in [mcp.types.ResourceContents, mcp.types.TextResourceContents, mcp.types.BlobResourceContents]:
+    _cls.model_fields["uri"].annotation = str | None
+    _cls.model_fields["uri"].default = None
+    _cls.model_fields["uri"].metadata = []
+for _cls in [mcp.types.ResourceContents, mcp.types.TextResourceContents,
+             mcp.types.BlobResourceContents, mcp.types.EmbeddedResource,
+             mcp.types.CallToolResult]:
+    _cls.model_rebuild(force=True)
+
+
+class ToolboxAuth(httpx.Auth):
+    """httpx Auth that injects a fresh bearer token for the Foundry Toolbox MCP endpoint."""
+
+    def __init__(self, token_provider) -> None:
+        self._token_provider = token_provider
+
+    def auth_flow(self, request):
+        """Add Authorization header with a fresh token on every request."""
+        request.headers["Authorization"] = f"Bearer {self._token_provider()}"
+        yield request
+
+
 def _load_system_prompt() -> str:
     if SYSTEM_PROMPT_PATH.exists():
         return SYSTEM_PROMPT_PATH.read_text()
@@ -45,15 +79,15 @@ def _load_system_prompt() -> str:
 
 def main() -> None:
     """Start the hosted agent server."""
-    credential = DefaultAzureCredential()
+    user_mi = ManagedIdentityCredential(client_id=os.getenv("AZURE_CLIENT_ID"))
+    azd_cli = AzureDeveloperCliCredential(
+        tenant_id=os.getenv("AZURE_TENANT_ID"), process_timeout=60
+    )
+    credential = ChainedTokenCredential(user_mi, azd_cli)
 
     model = os.environ.get("AZURE_AI_MODEL_DEPLOYMENT_NAME") or os.environ.get("FOUNDRY_MODEL")
-    if model:
-        logger.info("Using model: %s", model)
-
-    project_endpoint = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
-    if project_endpoint:
-        logger.info("Using project endpoint: %s", project_endpoint[:60])
+    project_endpoint = os.environ["FOUNDRY_PROJECT_ENDPOINT"]
+    logger.info("Model: %s | Endpoint: %s", model, project_endpoint[:60])
 
     client = FoundryChatClient(
         project_endpoint=project_endpoint,
@@ -66,24 +100,35 @@ def main() -> None:
     toolbox_url = os.environ.get("TOOLBOX_MCP_URL", "")
     if toolbox_url:
         logger.info("Registering Toolbox MCP: %s", toolbox_url[:80])
-        try:
-            tools.append(client.get_mcp_tool(
-                name="toolbox",
-                url=toolbox_url,
-                approval_mode="never_require",
-            ))
-        except Exception as exc:
-            logger.warning("Failed to register Toolbox MCP: %s", exc)
+        token_provider = get_bearer_token_provider(
+            credential, "https://ai.azure.com/.default"
+        )
+        toolbox_http_client = httpx.AsyncClient(
+            auth=ToolboxAuth(token_provider),
+            headers={"Foundry-Features": "Toolboxes=V1Preview"},
+            timeout=120.0,
+        )
+        toolbox_mcp_tool = MCPStreamableHTTPTool(
+            name="toolbox",
+            url=toolbox_url,
+            http_client=toolbox_http_client,
+            load_prompts=False,
+        )
+        tools.append(toolbox_mcp_tool)
+        logger.info("Toolbox MCP registered successfully")
     else:
         logger.warning("TOOLBOX_MCP_URL not set — agent will have no tools")
 
     # --- Skills ---
     skills_provider = None
     if SKILLS_DIR.is_dir():
-        skills_provider = SkillsProvider.from_paths(
-            skill_paths=str(SKILLS_DIR),
-        )
-        logger.info("Loaded skills from %s", SKILLS_DIR)
+        try:
+            skills_provider = SkillsProvider.from_paths(
+                skill_paths=str(SKILLS_DIR),
+            )
+            logger.info("Loaded skills from %s", SKILLS_DIR)
+        except Exception as exc:
+            logger.warning("Failed to load skills: %s", exc, exc_info=True)
 
     agent = Agent(
         client=client,
