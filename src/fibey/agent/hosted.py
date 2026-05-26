@@ -25,6 +25,7 @@ from pathlib import Path
 from agent_framework import Agent, SkillsProvider
 from agent_framework.foundry import FoundryChatClient
 from agent_framework_foundry_hosting import ResponsesHostServer
+from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,11 +45,14 @@ def _load_system_prompt() -> str:
 
 def main() -> None:
     """Start the hosted agent server."""
+    credential = DefaultAzureCredential()
+
     model = os.environ.get("AZURE_AI_MODEL_DEPLOYMENT_NAME") or os.environ.get("FOUNDRY_MODEL")
     if model:
         logger.info("Using model: %s", model)
 
     client = FoundryChatClient(
+        credential=credential,
         model=model,
     )
 
