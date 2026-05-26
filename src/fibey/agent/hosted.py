@@ -12,9 +12,9 @@ Architecture (hosted mode):
 
 Environment variables (auto-injected by Foundry hosting):
     FOUNDRY_PROJECT_ENDPOINT — project endpoint URL
-    FOUNDRY_MODEL — model deployment name (from azure.yaml deployments)
 
 Environment variables (set in agent.yaml):
+    AZURE_AI_MODEL_DEPLOYMENT_NAME — model deployment name (e.g. gpt-4.1-mini)
     TOOLBOX_MCP_URL — Foundry Toolbox MCP endpoint URL
 """
 
@@ -44,7 +44,13 @@ def _load_system_prompt() -> str:
 
 def main() -> None:
     """Start the hosted agent server."""
-    client = FoundryChatClient()
+    model = os.environ.get("AZURE_AI_MODEL_DEPLOYMENT_NAME") or os.environ.get("FOUNDRY_MODEL")
+    if model:
+        logger.info("Using model: %s", model)
+
+    client = FoundryChatClient(
+        model=model,
+    )
 
     # --- Toolbox MCP Tool ---
     tools: list = []
