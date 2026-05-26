@@ -67,9 +67,19 @@ export function useChat() {
 
           // Update existing activity for same call_id (or tool if no call_id)
           const matchKey = event.call_id || event.tool;
-          const existing = updated.findIndex(
-            (a) => (a.call_id || a.tool) === matchKey && a.status !== "complete"
-          );
+          
+          // First, try to find by call_id if present (most specific match)
+          let existing = event.call_id
+            ? updated.findIndex((a) => a.call_id === event.call_id)
+            : -1;
+          
+          // If not found by call_id, try by tool name (but only update non-complete activities)
+          if (existing < 0) {
+            existing = updated.findIndex(
+              (a) => (a.call_id || a.tool) === matchKey && a.status !== "complete"
+            );
+          }
+          
           if (existing >= 0) {
             // Merge: prefer newer args if present, keep existing if not
             updated[existing] = {
@@ -80,7 +90,14 @@ export function useChat() {
             };
             return updated;
           }
-          return [...updated, activity];
+          
+          // Only create new activity if it's a fresh "running" event (not a late arrival)
+          if (activity.status === "running") {
+            return [...updated, activity];
+          }
+          
+          // Ignore late "complete" events for activities we don't have
+          return updated;
         });
       },
       onError(message) {
