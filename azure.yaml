@@ -7,6 +7,12 @@ name: fibey-agent
 metadata:
     template: fibey-agent
 services:
+    agent-service:
+        project: .
+        host: containerapp
+        language: docker
+        docker:
+            path: ./Dockerfile.agent-service
     fibey-agent:
         project: .
         host: azure.ai.agent
@@ -29,12 +35,6 @@ services:
                     capacity: 10
                     name: GlobalStandard
             startupCommand: python src/fibey/agent/hosted.py
-    agent-service:
-        project: .
-        host: containerapp
-        language: docker
-        docker:
-            path: ./Dockerfile.agent-service
     gateway:
         project: .
         host: containerapp

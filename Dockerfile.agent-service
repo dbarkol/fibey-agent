@@ -2,16 +2,23 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copy uv for dependency management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy project files
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml ./
 COPY src/ ./src/
 
-# Install dependencies (includes agent, toolbox, Azure OpenAI, etc.)
-RUN uv sync --no-dev
+# Install the package and all its dependencies
+RUN pip install --no-cache-dir -e .
+
+# Set Python path to include src
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "fibey.agent.service:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run uvicorn directly
+CMD ["uvicorn", "fibey.agent.service:app", "--host", "0.0.0.0", "--port", "8000"]
