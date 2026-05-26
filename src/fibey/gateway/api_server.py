@@ -101,7 +101,6 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
 
     try:
         token = _get_hosted_token()
-        logger.info("Got token for hosted agent (prefix=%s...)", token[:20])
     except Exception as exc:
         yield _sse("error", {"message": f"Auth failed: {exc}"})
         yield _sse("done", "[DONE]")
@@ -111,7 +110,6 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
         f"{endpoint.rstrip('/')}/agents/{HOSTED_AGENT_NAME}/endpoint"
         f"/protocols/openai/responses?api-version=2025-11-15-preview"
     )
-    logger.info("Hosted agent URL: %s", url)
 
     body: dict = {"input": message, "stream": True}
 
@@ -135,8 +133,7 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
             ) as resp:
                 if resp.status_code != 200:
                     error_body = await resp.aread()
-                    hdrs = dict(resp.headers)
-                    logger.error("Hosted agent %s: body=%s headers=%s", resp.status_code, error_body.decode()[:500], hdrs)
+                    logger.error("Hosted agent %s: %s", resp.status_code, error_body.decode()[:500])
                     yield _sse("error", {"message": f"Hosted agent error {resp.status_code}: {error_body.decode()[:300]}"})
                     yield _sse("done", "[DONE]")
                     return
