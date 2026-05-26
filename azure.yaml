@@ -1,81 +1,65 @@
-name: fibey-agent
-metadata:
-  template: fibey-agent
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
 requiredVersions:
     extensions:
         azure.ai.agents: '>=0.1.0-preview'
-
-# ---------------------------------------------------------------------------
-# Infrastructure
-# ---------------------------------------------------------------------------
-# This azure.yaml covers TWO deployment targets:
-#
-# 1. fibey-agent — Hosted agent deployed to Azure AI Foundry
-#    (managed by the Foundry platform in e2e-tests-westus2)
-#
-# 2. Container Apps — UI, gateway, inventory-mcp, work-orders-api,
-#    status-dashboard (deployed to fibey-apps resource group)
-#
-# See infra-agent/README.md for hosted agent details.
-# ---------------------------------------------------------------------------
-infra:
-  provider: bicep
-  path: infra
-  module: main
+name: fibey-agent
+metadata:
+    template: fibey-agent
 services:
-  # --- Hosted Agent (Foundry) ---
-  fibey-agent:
-    project: .
-    host: azure.ai.agent
-    language: docker
-    docker:
-      path: ./Dockerfile.agent
-      remoteBuild: true
-    config:
-      container:
-        resources:
-          cpu: "1"
-          memory: 2Gi
-      deployments:
-        - model:
-            format: OpenAI
-            name: gpt-4.1-mini
-            version: "2025-04-14"
-          name: gpt-4.1-mini
-          sku:
-            capacity: 10
-            name: GlobalStandard
-      startupCommand: python src/fibey/agent/hosted.py
-
-  # --- Container Apps ---
-  ui:
-    project: ui
-    language: docker
-    host: containerapp
-    docker:
-      path: ./Dockerfile
-  gateway:
-    project: .
-    language: docker
-    host: containerapp
-    docker:
-      path: ./Dockerfile
-  inventory-mcp:
-    project: services/inventory-mcp
-    language: docker
-    host: containerapp
-    docker:
-      path: ./Dockerfile
-  work-orders-api:
-    project: services/work-orders-api
-    language: docker
-    host: containerapp
-    docker:
-      path: ./Dockerfile
-  status-dashboard:
-    project: services/status-dashboard
-    language: docker
-    host: containerapp
-    docker:
-      path: ./Dockerfile
+    fibey-agent:
+        project: .
+        host: azure.ai.agent
+        language: docker
+        docker:
+            path: ./Dockerfile.agent
+            remoteBuild: true
+        config:
+            container:
+                resources:
+                    cpu: "1"
+                    memory: 2Gi
+            deployments:
+                - model:
+                    format: OpenAI
+                    name: gpt-4.1-mini
+                    version: "2025-04-14"
+                  name: gpt-4.1-mini
+                  sku:
+                    capacity: 10
+                    name: GlobalStandard
+            startupCommand: python src/fibey/agent/hosted.py
+    gateway:
+        project: .
+        host: containerapp
+        language: docker
+        docker:
+            path: ./Dockerfile
+    inventory-mcp:
+        project: services/inventory-mcp
+        host: containerapp
+        language: docker
+        docker:
+            path: ./Dockerfile
+    status-dashboard:
+        project: services/status-dashboard
+        host: containerapp
+        language: docker
+        docker:
+            path: ./Dockerfile
+    ui:
+        project: ui
+        host: containerapp
+        language: docker
+        docker:
+            path: ./Dockerfile
+    work-orders-api:
+        project: services/work-orders-api
+        host: containerapp
+        language: docker
+        docker:
+            path: ./Dockerfile
+infra:
+    provider: bicep
+    path: infra
+    module: main

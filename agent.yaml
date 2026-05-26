@@ -18,7 +18,5 @@ resources:
   cpu: "1"
   memory: "2Gi"
 environment_variables:
-  - name: FOUNDRY_MODEL
-    value: gpt-4.1-mini
   - name: TOOLBOX_MCP_URL
     value: "https://e2e-tests-westus2-account.services.ai.azure.com/api/projects/e2e-tests-westus2/toolboxes/fibey/mcp?api-version=v1"

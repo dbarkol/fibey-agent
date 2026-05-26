@@ -71,8 +71,11 @@ Set in `agent.yaml` and injected by the Foundry platform:
 | Variable | Source | Description |
 |----------|--------|-------------|
 | `FOUNDRY_PROJECT_ENDPOINT` | Auto-injected | Foundry project endpoint URL |
-| `FOUNDRY_MODEL` | `agent.yaml` | Model deployment name |
+| `FOUNDRY_MODEL` | Auto-injected | Model deployment name (from `azure.yaml`) |
 | `TOOLBOX_MCP_URL` | `agent.yaml` | Toolbox MCP endpoint URL |
+
+> **Note:** All `FOUNDRY_*` and `AGENT_*` env vars are reserved by the platform.
+> Do not set them in `agent.yaml` — they are auto-injected from the deployment config.
 
 ### Test the Agent
 

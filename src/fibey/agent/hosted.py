@@ -12,9 +12,9 @@ Architecture (hosted mode):
 
 Environment variables (auto-injected by Foundry hosting):
     FOUNDRY_PROJECT_ENDPOINT — project endpoint URL
+    FOUNDRY_MODEL — model deployment name (from azure.yaml deployments)
 
 Environment variables (set in agent.yaml):
-    FOUNDRY_MODEL — model deployment name (e.g. gpt-4.1-mini)
     TOOLBOX_MCP_URL — Foundry Toolbox MCP endpoint URL
 """
 
