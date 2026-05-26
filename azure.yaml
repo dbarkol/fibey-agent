@@ -29,6 +29,12 @@ services:
                     capacity: 10
                     name: GlobalStandard
             startupCommand: python src/fibey/agent/hosted.py
+    agent-service:
+        project: .
+        host: containerapp
+        language: docker
+        docker:
+            path: ./Dockerfile.agent-service
     gateway:
         project: .
         host: containerapp
