@@ -8,7 +8,6 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from azure.identity import AzureDeveloperCliCredential, DefaultAzureCredential
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -77,14 +76,18 @@ async def _run_local(message: str, session_id: str) -> AsyncGenerator[str, None]
 
 def _get_hosted_token() -> str:
     """Get a bearer token for the Foundry hosted agent endpoint."""
-    try:
-        cred = AzureDeveloperCliCredential(
+    from azure.identity import (
+        ChainedTokenCredential,
+        ManagedIdentityCredential,
+        AzureDeveloperCliCredential,
+    )
+    cred = ChainedTokenCredential(
+        ManagedIdentityCredential(),
+        AzureDeveloperCliCredential(
             tenant_id=os.getenv("AZURE_TENANT_ID"), process_timeout=30
-        )
-        return cred.get_token("https://ai.azure.com/.default").token
-    except Exception:
-        cred = DefaultAzureCredential()
-        return cred.get_token("https://ai.azure.com/.default").token
+        ),
+    )
+    return cred.get_token("https://ai.azure.com/.default").token
 
 
 async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None]:
