@@ -2,18 +2,53 @@ name: fibey-agent
 metadata:
   template: fibey-agent
 
+requiredVersions:
+    extensions:
+        azure.ai.agents: '>=0.1.0-preview'
+
 # ---------------------------------------------------------------------------
 # Infrastructure
 # ---------------------------------------------------------------------------
-# This azure.yaml targets the "fibey-apps" resource group.
-# The hosted agent & Toolbox live in a separate resource group
-# ("fibey-agent") that is managed outside of azd. See infra-agent/README.md.
+# This azure.yaml covers TWO deployment targets:
+#
+# 1. fibey-agent — Hosted agent deployed to Azure AI Foundry
+#    (managed by the Foundry platform in e2e-tests-westus2)
+#
+# 2. Container Apps — UI, gateway, inventory-mcp, work-orders-api,
+#    status-dashboard (deployed to fibey-apps resource group)
+#
+# See infra-agent/README.md for hosted agent details.
 # ---------------------------------------------------------------------------
 infra:
   provider: bicep
   path: infra
   module: main
 services:
+  # --- Hosted Agent (Foundry) ---
+  fibey-agent:
+    project: .
+    host: azure.ai.agent
+    language: docker
+    docker:
+      path: ./Dockerfile.agent
+      remoteBuild: true
+    config:
+      container:
+        resources:
+          cpu: "1"
+          memory: 2Gi
+      deployments:
+        - model:
+            format: OpenAI
+            name: gpt-4.1-mini
+            version: "2025-04-14"
+          name: gpt-4.1-mini
+          sku:
+            capacity: 10
+            name: GlobalStandard
+      startupCommand: python src/fibey/agent/hosted.py
+
+  # --- Container Apps ---
   ui:
     project: ui
     language: docker

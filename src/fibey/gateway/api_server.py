@@ -67,36 +67,17 @@ async def _run_local(message: str, session_id: str) -> AsyncGenerator[str, None]
 
 
 async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None]:
-    """Proxy to the Foundry-hosted agent and stream SSE events."""
-    from fibey.agent.hosted import run_hosted_agent
+    """Proxy to the Foundry-hosted agent.
 
-    session = sessions.setdefault(session_id, {
-        "agent_session_id": None,
-        "previous_response_id": None,
+    Note: When the agent is deployed as a hosted agent, it runs via
+    ResponsesHostServer and clients talk to the Foundry Responses API
+    directly — this gateway proxy is not used. This stub remains for
+    local testing of the hosted mode configuration.
+    """
+    yield _sse("error", {
+        "message": "Hosted mode is active. The agent runs via Foundry Responses API — "
+                   "connect to the Foundry project endpoint directly, not through this gateway."
     })
-
-    try:
-        async for event in run_hosted_agent(message, session):
-            if event["type"] == "delta":
-                yield _sse("delta", {"content": event["content"]})
-            elif event["type"] == "activity":
-                yield _sse("activity", {
-                    "tool": event.get("tool", ""),
-                    "call_id": event.get("call_id", ""),
-                    "status": event.get("status", ""),
-                    "detail": event.get("detail", ""),
-                    "args": event.get("args", ""),
-                    "result": event.get("result", ""),
-                })
-            elif event["type"] == "citation":
-                yield _sse("citation", {
-                    "source": event.get("source", ""),
-                    "url": event.get("url", ""),
-                })
-    except Exception as e:
-        logger.exception("Hosted agent error")
-        yield _sse("error", {"message": str(e)})
-
     yield _sse("done", "[DONE]")
 
 

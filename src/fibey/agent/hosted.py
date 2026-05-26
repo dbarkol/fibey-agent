@@ -1,88 +1,86 @@
-"""
-Hosted-mode entrypoint for Foundry Agent Service.
+"""Fibey Agent — Foundry hosted agent entrypoint.
 
-In hosted mode, the agent is deployed as a container and runs via
-ResponsesHostServer. The Toolbox MCP is registered via FoundryChatClient.
+Deployed to Azure AI Foundry as a hosted agent using the responses protocol.
+Follows the foundry-samples agent-framework pattern.
+
+Architecture (hosted mode):
+    Single agent with:
+    - Foundry Toolbox MCP tool (work orders, inventory, knowledge base)
+    - SkillsProvider for deterministic routing (field-briefing,
+      inventory-lookup, knowledge-retrieval, work-order-management,
+      work-order-preparation)
+
+Environment variables (auto-injected by Foundry hosting):
+    FOUNDRY_PROJECT_ENDPOINT — project endpoint URL
+
+Environment variables (set in agent.yaml):
+    FOUNDRY_MODEL — model deployment name (e.g. gpt-4.1-mini)
+    TOOLBOX_MCP_URL — Foundry Toolbox MCP endpoint URL
 """
 
-import os
 import logging
+import os
 from pathlib import Path
-from typing import AsyncGenerator
 
-from agent_framework import Agent
+from agent_framework import Agent, SkillsProvider
 from agent_framework.foundry import FoundryChatClient
 from agent_framework_foundry_hosting import ResponsesHostServer
+from dotenv import load_dotenv
 
+load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.md"
+SKILLS_DIR = Path(__file__).parent / "skills"
 
 
 def _load_system_prompt() -> str:
     if SYSTEM_PROMPT_PATH.exists():
         return SYSTEM_PROMPT_PATH.read_text()
-    return "You are Fibey, a helpful AI assistant."
+    return "You are Fibey, a helpful AI assistant for fiber optics field operations."
 
 
-def create_hosted_agent() -> Agent:
-    """Create the agent for Foundry hosted deployment."""
+def main() -> None:
+    """Start the hosted agent server."""
     client = FoundryChatClient()
 
-    tools = []
-    toolbox_url = os.getenv("TOOLBOX_MCP_URL", "")
+    # --- Toolbox MCP Tool ---
+    tools: list = []
+    toolbox_url = os.environ.get("TOOLBOX_MCP_URL", "")
     if toolbox_url:
-        toolbox_mcp = client.get_mcp_tool(
-            name="toolbox",
-            url=toolbox_url,
-            approval_mode="never_require",
+        logger.info("Registering Toolbox MCP: %s", toolbox_url[:80])
+        try:
+            tools.append(client.get_mcp_tool(
+                name="toolbox",
+                url=toolbox_url,
+                approval_mode="never_require",
+            ))
+        except Exception as exc:
+            logger.warning("Failed to register Toolbox MCP: %s", exc)
+    else:
+        logger.warning("TOOLBOX_MCP_URL not set — agent will have no tools")
+
+    # --- Skills ---
+    skills_provider = None
+    if SKILLS_DIR.is_dir():
+        skills_provider = SkillsProvider.from_paths(
+            skill_paths=str(SKILLS_DIR),
         )
-        tools.append(toolbox_mcp)
+        logger.info("Loaded skills from %s", SKILLS_DIR)
 
     agent = Agent(
         client=client,
         name="fibey",
         instructions=_load_system_prompt(),
         tools=tools,
+        context_providers=[skills_provider] if skills_provider else None,
+        default_options={"store": False},
     )
 
-    return agent
-
-
-async def run_hosted_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
-    """
-    Proxy to the Foundry-hosted agent and yield streaming events.
-
-    In production, the hosted agent runs via ResponsesHostServer and this
-    function is not called. This is used by the gateway when AGENT_MODE=hosted
-    to proxy to the remote hosted agent endpoint.
-    """
-    project_endpoint = os.getenv("FOUNDRY_PROJECT_ENDPOINT", "")
-    agent_name = os.getenv("HOSTED_AGENT_NAME", "")
-
-    if not project_endpoint or not agent_name:
-        yield {
-            "type": "delta",
-            "content": "⚠️ Hosted mode requires FOUNDRY_PROJECT_ENDPOINT and HOSTED_AGENT_NAME environment variables.",
-        }
-        return
-
-    # TODO: Implement Responses API proxy
-    # 1. Create or reuse agent session via azure-ai-projects SDK
-    # 2. Send message with session["agent_session_id"] and session["previous_response_id"]
-    # 3. Stream response events, translating Responses API events to our SSE format
-    # 4. Update session state
-
-    yield {
-        "type": "delta",
-        "content": f"Hosted mode is configured for agent '{agent_name}' at '{project_endpoint}', but the Responses API proxy is not yet implemented.",
-    }
-
-
-def main():
-    """Entrypoint for Foundry Agent Service container."""
-    agent = create_hosted_agent()
-    ResponsesHostServer(agent).run()
+    server = ResponsesHostServer(agent)
+    server.run()
 
 
 if __name__ == "__main__":
