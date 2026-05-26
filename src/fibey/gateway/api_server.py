@@ -325,11 +325,16 @@ async def chat(request: Request):
     message = body.get("message", "")
     session_id = body.get("session_id", str(uuid.uuid4()))
 
+    logger.info("Gateway mode: %s, message: %s, session: %s", AGENT_MODE, message[:50], session_id)
+    
     if AGENT_MODE == "hosted":
+        logger.info("Using hosted agent mode")
         generator = _run_hosted(message, session_id)
     elif AGENT_MODE == "containerapp":
+        logger.info("Using containerapp mode, URL: %s", CONTAINERAPP_AGENT_URL)
         generator = _run_containerapp(message, session_id)
     else:
+        logger.info("Using local agent mode")
         generator = _run_local(message, session_id)
 
     return StreamingResponse(
