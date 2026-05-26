@@ -120,8 +120,11 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
 
     seen_call_ids: set[str] = set()
 
+    debug_events = os.getenv("HOSTED_DEBUG_EVENTS", "0") == "1"
+    timeout_s = float(os.getenv("HOSTED_TIMEOUT_SECONDS", "600"))
+
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=timeout_s) as client:
             async with client.stream(
                 "POST",
                 url,
@@ -159,13 +162,16 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
 
                         event_type = event.get("type", "")
 
+                        if debug_events:
+                            logger.info("HOSTED_EVT %s keys=%s", event_type, list(event.keys()))
+
                         # Text deltas
                         if event_type == "response.output_text.delta":
                             delta = event.get("delta", "")
                             if delta:
                                 yield _sse("delta", {"content": delta})
 
-                        # MCP / function call started
+                        # MCP / function call started (item added)
                         elif event_type == "response.output_item.added":
                             item = event.get("item", {})
                             item_type = item.get("type", "")
@@ -184,13 +190,36 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
                                     "result": "",
                                 })
 
-                        # MCP / function call output
+                        # MCP / function call finished (item done) — output is embedded in the item
                         elif event_type == "response.output_item.done":
                             item = event.get("item", {})
                             item_type = item.get("type", "")
                             call_id = item.get("call_id", "") or item.get("id", "")
 
-                            if item_type in ("mcp_call_output", "function_call_output"):
+                            if item_type == "mcp_call":
+                                # MCP call output is on the mcp_call item itself
+                                output = item.get("output", "") or item.get("result", "")
+                                error = item.get("error")
+                                if error:
+                                    yield _sse("activity", {
+                                        "tool": item.get("name", ""),
+                                        "call_id": call_id,
+                                        "status": "error",
+                                        "detail": f"Error: {error}"[:200],
+                                        "args": "",
+                                        "result": str(error)[:2000],
+                                    })
+                                else:
+                                    out_str = output if isinstance(output, str) else json.dumps(output)
+                                    yield _sse("activity", {
+                                        "tool": item.get("name", ""),
+                                        "call_id": call_id,
+                                        "status": "complete",
+                                        "detail": "Done",
+                                        "args": item.get("arguments", ""),
+                                        "result": out_str[:2000],
+                                    })
+                            elif item_type in ("mcp_call_output", "function_call_output"):
                                 output = item.get("output", "")
                                 yield _sse("activity", {
                                     "tool": "",
@@ -201,12 +230,43 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
                                     "result": output[:2000] if isinstance(output, str) else json.dumps(output)[:2000],
                                 })
 
+                        # Dedicated MCP-call lifecycle events (newer Responses API)
+                        elif event_type in ("response.mcp_call.completed", "response.mcp_call_completed"):
+                            call_id = event.get("call_id", "") or event.get("item_id", "")
+                            output = event.get("output", "") or event.get("result", "")
+                            out_str = output if isinstance(output, str) else json.dumps(output)
+                            yield _sse("activity", {
+                                "tool": event.get("name", ""),
+                                "call_id": call_id,
+                                "status": "complete",
+                                "detail": "Done",
+                                "args": "",
+                                "result": out_str[:2000],
+                            })
+                        elif event_type in ("response.mcp_call.failed", "response.mcp_call_failed"):
+                            call_id = event.get("call_id", "") or event.get("item_id", "")
+                            err = event.get("error", "MCP call failed")
+                            yield _sse("activity", {
+                                "tool": event.get("name", ""),
+                                "call_id": call_id,
+                                "status": "error",
+                                "detail": str(err)[:200],
+                                "args": "",
+                                "result": str(err)[:2000],
+                            })
+
                         # Capture agent_session_id and response_id for continuity
                         elif event_type == "response.completed":
                             response_obj = event.get("response", {})
                             resp_id = response_obj.get("id", "")
                             if resp_id:
                                 _hosted_sessions[session_id] = resp_id
+
+                        # Surface errors at the response level
+                        elif event_type in ("response.failed", "error"):
+                            err = event.get("error") or event.get("message") or event
+                            logger.error("Hosted agent response error: %s", err)
+                            yield _sse("error", {"message": f"Agent error: {str(err)[:300]}"})
 
     except httpx.TimeoutException:
         yield _sse("error", {"message": "Hosted agent request timed out"})
