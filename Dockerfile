@@ -2,13 +2,18 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY src/fibey/gateway/ ./src/fibey/gateway/
+COPY src/fibey/__init__.py ./src/fibey/__init__.py
 
-COPY pyproject.toml uv.lock ./
-COPY src/ ./src/
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn[standard] \
+    httpx \
+    azure-identity \
+    python-dotenv
 
-RUN uv sync --no-dev
+ENV PYTHONPATH=/app/src
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "fibey.gateway.api_server:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "fibey.gateway.api_server:app", "--host", "0.0.0.0", "--port", "8000"]
