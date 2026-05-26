@@ -16,14 +16,6 @@ function nextActivityId(): string {
 }
 
 /** Map tool names to their parent skill */
-function inferSkillFromTool(toolName: string): string | null {
-  const lower = toolName.toLowerCase();
-  if (lower === "knowledge_base" || lower.includes("knowledge_base")) return "knowledge-retrieval";
-  if (lower.startsWith("inventory___") || lower.startsWith("inventory__")) return "inventory";
-  if (lower.startsWith("work_orders___") || lower.startsWith("work_orders__")) return "work-orders";
-  return null;
-}
-
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
@@ -72,25 +64,6 @@ export function useChat() {
 
         setActivities((prev) => {
           const updated = [...prev];
-
-          // Synthesize a "Load Skill" entry if this is the first tool call from a skill
-          if (event.status === "running") {
-            const skillName = inferSkillFromTool(event.tool);
-            if (skillName) {
-              const alreadySeen = prev.some(
-                (a) => a.tool === "load_skill" && a.detail === `Loading skill: ${skillName}`
-              );
-              if (!alreadySeen) {
-                updated.push({
-                  tool: "load_skill",
-                  status: "complete",
-                  detail: `Loading skill: ${skillName}`,
-                  id: nextActivityId(),
-                  timestamp: Date.now(),
-                });
-              }
-            }
-          }
 
           // Update existing activity for same call_id (or tool if no call_id)
           const matchKey = event.call_id || event.tool;

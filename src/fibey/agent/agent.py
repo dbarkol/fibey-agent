@@ -237,6 +237,7 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
         # Track tool calls to deduplicate streaming repeats and map results back
         seen_calls: set[str] = set()
         seen_results: set[str] = set()
+        seen_skill_loads: set[str] = set()  # dedupe repeated load_skill for same skill
         call_id_to_name: dict[str, str] = {}
         pending_args: dict[str, str] = {}
 
@@ -261,6 +262,17 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                             raw_args = _json.dumps(raw_args)
                         if call_id not in pending_args:
                             pending_args[call_id] = raw_args
+                            # Suppress duplicate load_skill calls for the same skill
+                            if tool_name == "load_skill":
+                                try:
+                                    parsed = _json.loads(raw_args) if raw_args else {}
+                                    skill_key = parsed.get("skill_name", "")
+                                except Exception:
+                                    skill_key = ""
+                                if skill_key and skill_key in seen_skill_loads:
+                                    continue
+                                if skill_key:
+                                    seen_skill_loads.add(skill_key)
                             # Emit an early "running" activity so the UI shows a spinner
                             yield {
                                 "type": "activity",
@@ -281,15 +293,23 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                             seen_calls.add(call_id)
                             args_str = pending_args.get(call_id, "")
                             import json as _json
-                            detail = f"Calling {tool_name}..."
+
+                            # Suppress duplicate load_skill for same skill name
                             if tool_name == "load_skill":
                                 try:
                                     parsed = _json.loads(args_str) if args_str else {}
                                     skill_name = parsed.get("skill_name", "")
-                                    if skill_name:
-                                        detail = f"Loading skill: {skill_name}"
                                 except Exception:
-                                    pass
+                                    skill_name = ""
+                                if skill_name and skill_name in seen_skill_loads:
+                                    # Skip both running and complete events
+                                    seen_results.add(call_id)
+                                    continue
+                                if skill_name:
+                                    seen_skill_loads.add(skill_name)
+                                    detail = f"Loading skill: {skill_name}"
+                                else:
+                                    detail = f"Calling {tool_name}..."
                             else:
                                 try:
                                     parsed = _json.loads(args_str) if args_str else {}
