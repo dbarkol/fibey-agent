@@ -63,20 +63,16 @@ def _get_token_sync(credential) -> str:
     return credential.get_token(_TOKEN_SCOPE).token
 
 
-class _AzureAuthTransport(httpx.AsyncHTTPTransport):
-    """httpx transport that injects a bearer token on every request,
-    including the MCP initialize handshake."""
-
-    def __init__(self, credential, **kwargs: Any):
-        super().__init__(**kwargs)
+class _ToolboxAuth(httpx.Auth):
+    """httpx Auth that injects a fresh bearer token for Toolbox MCP."""
+    
+    def __init__(self, credential):
         self._credential = credential
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        loop = asyncio.get_running_loop()
-        token = await loop.run_in_executor(None, _get_token_sync, self._credential)
-        request.headers["Authorization"] = f"Bearer {token}"
-        request.headers["Foundry-Features"] = "Toolboxes=V1Preview"
-        return await super().handle_async_request(request)
+    
+    def auth_flow(self, request):
+        """Add Authorization header with a fresh token on every request."""
+        request.headers["Authorization"] = f"Bearer {self._credential.get_token(_TOKEN_SCOPE).token}"
+        yield request
 
 
 def _create_toolbox_mcp(credential) -> MCPStreamableHTTPTool | None:
@@ -86,23 +82,23 @@ def _create_toolbox_mcp(credential) -> MCPStreamableHTTPTool | None:
         logger.warning("TOOLBOX_MCP_URL not set — running without Toolbox")
         return None
 
-    auth_http_client = httpx.AsyncClient(
-        transport=_AzureAuthTransport(credential),
-        timeout=httpx.Timeout(60.0, connect=10.0),
-    )
+    # Add api-version query parameter if not already present
+    if "api-version" not in toolbox_url:
+        separator = "&" if "?" in toolbox_url else "?"
+        toolbox_url = f"{toolbox_url}{separator}api-version=v1"
+    
+    logger.info("Toolbox MCP URL: %s", toolbox_url)
 
-    def header_provider(kwargs: dict[str, Any] | None = None) -> dict[str, str]:
-        token = credential.get_token(_TOKEN_SCOPE).token
-        return {
-            "Authorization": f"Bearer {token}",
-            "Foundry-Features": "Toolboxes=V1Preview",
-        }
+    auth_http_client = httpx.AsyncClient(
+        auth=_ToolboxAuth(credential),
+        headers={"Foundry-Features": "Toolboxes=V1Preview"},
+        timeout=120.0,
+    )
 
     return MCPStreamableHTTPTool(
         name="toolbox",
         url=toolbox_url,
         http_client=auth_http_client,
-        header_provider=header_provider,
         load_prompts=False,
     )
 
