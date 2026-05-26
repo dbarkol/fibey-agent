@@ -51,9 +51,14 @@ def main() -> None:
     if model:
         logger.info("Using model: %s", model)
 
+    project_endpoint = os.environ.get("FOUNDRY_PROJECT_ENDPOINT", "")
+    if project_endpoint:
+        logger.info("Using project endpoint: %s", project_endpoint[:60])
+
     client = FoundryChatClient(
-        credential=credential,
+        project_endpoint=project_endpoint,
         model=model,
+        credential=credential,
     )
 
     # --- Toolbox MCP Tool ---
