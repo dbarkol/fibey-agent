@@ -238,8 +238,10 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
         seen_calls: set[str] = set()
         seen_results: set[str] = set()
         seen_skill_loads: set[str] = set()  # dedupe repeated load_skill for same skill
+        seen_tool_args: set[str] = set()    # dedupe repeated tool calls with same args
         call_id_to_name: dict[str, str] = {}
         pending_args: dict[str, str] = {}
+        suppressed_call_ids: set[str] = set()  # call_ids whose events should be hidden
 
         async for update in stream:
             update: AgentResponseUpdate
@@ -262,7 +264,8 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                             raw_args = _json.dumps(raw_args)
                         if call_id not in pending_args:
                             pending_args[call_id] = raw_args
-                            # Suppress duplicate load_skill calls for the same skill
+                            # Try to detect duplicates early (works when args arrive in one chunk)
+                            skip = False
                             if tool_name == "load_skill":
                                 try:
                                     parsed = _json.loads(raw_args) if raw_args else {}
@@ -270,17 +273,27 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                                 except Exception:
                                     skill_key = ""
                                 if skill_key and skill_key in seen_skill_loads:
-                                    continue
-                                if skill_key:
+                                    skip = True
+                                elif skill_key:
                                     seen_skill_loads.add(skill_key)
-                            # Emit an early "running" activity so the UI shows a spinner
-                            yield {
-                                "type": "activity",
-                                "tool": tool_name,
-                                "call_id": call_id,
-                                "status": "running",
-                                "detail": f"Calling {tool_name}...",
-                            }
+                            elif raw_args:
+                                try:
+                                    _json.loads(raw_args)  # only dedup if args are complete JSON
+                                    tool_args_key = f"{tool_name}::{raw_args}"
+                                    if tool_args_key in seen_tool_args:
+                                        skip = True
+                                        suppressed_call_ids.add(call_id)
+                                except (ValueError, TypeError):
+                                    pass  # incomplete args, can't dedup yet
+                            if not skip:
+                                # Emit an early "running" activity so the UI shows a spinner
+                                yield {
+                                    "type": "activity",
+                                    "tool": tool_name,
+                                    "call_id": call_id,
+                                    "status": "running",
+                                    "detail": f"Calling {tool_name}...",
+                                }
                         else:
                             pending_args[call_id] += raw_args
 
@@ -302,8 +315,8 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                                 except Exception:
                                     skill_name = ""
                                 if skill_name and skill_name in seen_skill_loads:
-                                    # Skip both running and complete events
                                     seen_results.add(call_id)
+                                    suppressed_call_ids.add(call_id)
                                     continue
                                 if skill_name:
                                     seen_skill_loads.add(skill_name)
@@ -311,6 +324,15 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                                 else:
                                     detail = f"Calling {tool_name}..."
                             else:
+                                # Suppress duplicate tool calls with identical name+args
+                                tool_args_key = f"{tool_name}::{args_str}"
+                                if tool_args_key in seen_tool_args:
+                                    seen_results.add(call_id)
+                                    suppressed_call_ids.add(call_id)
+                                    continue
+                                seen_tool_args.add(tool_args_key)
+
+                                detail = f"Calling {tool_name}..."
                                 try:
                                     parsed = _json.loads(args_str) if args_str else {}
                                     if isinstance(parsed, dict):

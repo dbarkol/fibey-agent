@@ -52,10 +52,12 @@ filter by `status=open` rather than listing all and filtering yourself.
 
 | WO ID | Title | Status | Priority | Technician | Due Date |
 |-------|-------|--------|----------|------------|----------|
-| WO-003 | Cable Install | 🟢 Open | Medium | Sarah Kim | 2025-06-10 |
+| WO-003 | Cable Install | 🟢 Open | 🟡 Medium | Sarah Kim | 2025-06-10 |
 | WO-007 | Splice Repair | 🟡 In Progress | 🔴 Critical | Mike Chen | 2025-06-15 |
 
 ### Step 3: Status & Priority Indicators
+
+**Always include the label text after the icon** — never show a bare colored circle.
 
 **Status:**
 - 🟢 Open — not yet started
@@ -68,6 +70,9 @@ filter by `status=open` rather than listing all and filtering yourself.
 - 🟠 High — urgent
 - 🟡 Medium — standard
 - 🟢 Low — when time allows
+
+When status and priority appear on the same line (e.g., in a header), use labels to disambiguate:
+`🟡 In Progress | 🟡 Medium Priority` — not `🟡 | 🟡`
 
 ### Step 4: Handle Creates and Updates
 
