@@ -6,6 +6,11 @@ to individual tools (FoundryIQ, Work Orders OpenAPI, Inventory MCP) behind
 the scenes.  When the Toolbox is configured, FoundryIQ provides knowledge
 base retrieval; otherwise a local Azure AI Search function tool is used
 as a fallback.
+
+When TOOLBOX_MCP_URL is empty the agent falls back to **local-direct mode**:
+it connects to the inventory MCP server and work-orders API running on
+localhost, bypassing the Toolbox entirely.  Set INVENTORY_MCP_URL and
+WORK_ORDERS_API_URL to override the default localhost URLs.
 """
 
 import asyncio
@@ -184,8 +189,165 @@ def _create_kb_search_tool() -> FunctionTool | None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Local-direct mode: connect to localhost services without Toolbox
+# ---------------------------------------------------------------------------
+
+_INVENTORY_MCP_URL = os.getenv("INVENTORY_MCP_URL", "http://localhost:8001")
+_WORK_ORDERS_API_URL = os.getenv("WORK_ORDERS_API_URL", "http://localhost:8002")
+
+
+def _create_local_inventory_mcp() -> MCPStreamableHTTPTool:
+    """Connect directly to the local inventory MCP server."""
+    url = f"{_INVENTORY_MCP_URL}/mcp"
+    logger.info("Local-direct: inventory MCP at %s", url)
+    return MCPStreamableHTTPTool(
+        name="inventory",
+        url=url,
+        load_prompts=False,
+    )
+
+
+def _create_work_order_tools() -> list[FunctionTool]:
+    """Create FunctionTools that call the local work-orders REST API."""
+    base = _WORK_ORDERS_API_URL
+
+    async def list_work_orders(
+        status: str | None = None,
+        priority: str | None = None,
+        assigned_technician: str | None = None,
+    ) -> str:
+        """List work orders with optional filters.
+
+        Args:
+            status: Filter by status (open, in_progress, completed, cancelled).
+            priority: Filter by priority (low, medium, high, critical).
+            assigned_technician: Filter by technician name.
+
+        Returns:
+            JSON string with matching work orders.
+        """
+        params = {}
+        if status:
+            params["status"] = status
+        if priority:
+            params["priority"] = priority
+        if assigned_technician:
+            params["assigned_technician"] = assigned_technician
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"{base}/work-orders", params=params)
+            resp.raise_for_status()
+            return resp.text
+
+    async def get_work_order(work_order_id: str) -> str:
+        """Get details of a specific work order.
+
+        Args:
+            work_order_id: The work order ID (e.g. WO-001).
+
+        Returns:
+            JSON string with work order details.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"{base}/work-orders/{work_order_id}")
+            resp.raise_for_status()
+            return resp.text
+
+    async def create_work_order(
+        title: str,
+        description: str,
+        priority: str,
+        assigned_technician: str,
+        location: str,
+        due_date: str,
+        status: str = "open",
+    ) -> str:
+        """Create a new work order.
+
+        Args:
+            title: Work order title.
+            description: Detailed description.
+            priority: Priority level (low, medium, high, critical).
+            assigned_technician: Technician name.
+            location: Job site location.
+            due_date: Due date in ISO 8601 format.
+            status: Initial status (default: open).
+
+        Returns:
+            JSON string with the created work order.
+        """
+        payload = {
+            "title": title,
+            "description": description,
+            "priority": priority,
+            "assigned_technician": assigned_technician,
+            "location": location,
+            "due_date": due_date,
+            "status": status,
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(f"{base}/work-orders", json=payload)
+            resp.raise_for_status()
+            return resp.text
+
+    async def update_work_order(work_order_id: str, **updates: Any) -> str:
+        """Update an existing work order.
+
+        Args:
+            work_order_id: The work order ID (e.g. WO-001).
+            **updates: Fields to update (status, priority, assigned_technician, etc.).
+
+        Returns:
+            JSON string with the updated work order.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.patch(
+                f"{base}/work-orders/{work_order_id}", json=updates
+            )
+            resp.raise_for_status()
+            return resp.text
+
+    return [
+        FunctionTool(
+            name="list_work_orders",
+            description=(
+                "List work orders with optional filters. "
+                "Filter by status (open/in_progress/completed/cancelled), "
+                "priority (low/medium/high/critical), or assigned_technician."
+            ),
+            func=list_work_orders,
+        ),
+        FunctionTool(
+            name="get_work_order",
+            description="Get full details of a specific work order by its ID (e.g. WO-001).",
+            func=get_work_order,
+        ),
+        FunctionTool(
+            name="create_work_order",
+            description=(
+                "Create a new work order. Requires title, description, priority, "
+                "assigned_technician, location, and due_date."
+            ),
+            func=create_work_order,
+        ),
+        FunctionTool(
+            name="update_work_order",
+            description=(
+                "Update an existing work order. Pass work_order_id and any fields "
+                "to change (status, priority, assigned_technician, location, etc.)."
+            ),
+            func=update_work_order,
+        ),
+    ]
+
+
 def create_agent() -> tuple[Agent, list]:
-    """Create the agent with Foundry client and Toolbox MCP connection."""
+    """Create the agent with Foundry client and Toolbox MCP connection.
+
+    When TOOLBOX_MCP_URL is set, all tools are accessed via the single
+    Toolbox MCP endpoint.  When it is empty, the agent connects directly
+    to local services (inventory MCP on :8001, work-orders API on :8002).
+    """
     credential = _get_credential()
 
     client = FoundryChatClient(
@@ -196,10 +358,13 @@ def create_agent() -> tuple[Agent, list]:
     toolbox_mcp = _create_toolbox_mcp(credential)
     if toolbox_mcp:
         tools.append(toolbox_mcp)
+    else:
+        # Local-direct mode: connect to individual services
+        logger.info("Local-direct mode: connecting to local services")
+        tools.append(_create_local_inventory_mcp())
+        tools.extend(_create_work_order_tools())
 
-    # Only add the local KB tool when Toolbox is NOT configured
-    # (Toolbox provides knowledge_base via azure_ai_search / FoundryIQ)
-    if not toolbox_mcp:
+        # Add KB search as fallback if configured
         kb_tool = _create_kb_search_tool()
         if kb_tool:
             tools.append(kb_tool)
