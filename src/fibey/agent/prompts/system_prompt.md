@@ -111,8 +111,13 @@ When a user uploads a file (PDF or image) and Content Understanding analyzes it:
 | Due Date | YYYY-MM-DD |
 | Parts Needed | FIB-XXX × qty (if found) |
 
-Then ask: **"Should I create this work order?"**
+Then ask: **"Should I create this work order in the system?"**
 
-4. **On user confirmation** (yes/confirm/go ahead), call `create_work_order` with the extracted fields and reply with a confirmation including the new WO ID
+4. **On user confirmation** (yes/confirm/go ahead/save/commit), **immediately** call `create_work_order` with the extracted fields. Do NOT ask for details again — you already have them from the document analysis. Reply with a confirmation including the new WO ID.
 5. **If it's NOT a work order**, summarize the document content based on what CU extracted (markdown, fields) and answer any user questions about it
 6. **If fields are missing or ambiguous**, ask the user to clarify only the essential missing fields (title, description, priority, location, assigned_technician, due_date are required)
+
+**IMPORTANT rules for document-based work orders:**
+- A work order ID in the uploaded document (e.g., "WO-618") is a **reference number from the paper form**, NOT an existing work order in our system. Always treat it as a NEW work order to be created.
+- When the user says "save", "commit", "create", or "yes" after you showed the extracted table, use the data you already extracted. Never ask the user to re-enter information that was already extracted from the document.
+- Remember the extracted fields across the conversation. If the user says "commit this work order" later in the chat, recall the fields from the earlier extraction.
