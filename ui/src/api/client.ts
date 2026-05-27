@@ -1,7 +1,14 @@
+export interface FileAttachment {
+  name: string;
+  type: string;
+  dataUrl: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: FileAttachment[];
 }
 
 export interface ActivityEvent {
@@ -25,12 +32,22 @@ export interface StreamCallbacks {
 export async function sendMessage(
   message: string,
   sessionId: string,
-  callbacks: StreamCallbacks
+  callbacks: StreamCallbacks,
+  attachments?: FileAttachment[]
 ): Promise<void> {
+  const body: Record<string, unknown> = { message, session_id: sessionId };
+  if (attachments && attachments.length > 0) {
+    body.attachments = attachments.map((a) => ({
+      name: a.name,
+      type: a.type,
+      data_url: a.dataUrl,
+    }));
+  }
+
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, session_id: sessionId }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -107,4 +124,18 @@ export async function resetSession(sessionId: string): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId }),
   });
+}
+
+export interface Features {
+  content_understanding: boolean;
+}
+
+export async function fetchFeatures(): Promise<Features> {
+  try {
+    const response = await fetch("/api/features");
+    if (!response.ok) return { content_understanding: false };
+    return (await response.json()) as Features;
+  } catch {
+    return { content_understanding: false };
+  }
 }

@@ -14,6 +14,7 @@ WORK_ORDERS_API_URL to override the default localhost URLs.
 """
 
 import asyncio
+import base64
 import os
 import json
 import logging
@@ -27,9 +28,11 @@ from agent_framework import (
     Agent,
     AgentResponseUpdate,
     AgentSession,
+    Content,
     FileSkillsSource,
     FunctionTool,
     MCPStreamableHTTPTool,
+    Message,
     ResponseStream,
     SkillsProvider,
 )
@@ -45,6 +48,9 @@ _TOKEN_SCOPE = "https://ai.azure.com/.default"
 _SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT", "")
 _SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "foundry-iq-docs-index")
 _SEARCH_API_KEY = os.getenv("AZURE_SEARCH_API_KEY", "")
+
+# Content Understanding (optional)
+_CU_ENDPOINT = os.getenv("AZURE_CONTENTUNDERSTANDING_ENDPOINT", "")
 
 
 def _load_system_prompt() -> str:
@@ -369,23 +375,43 @@ def create_agent() -> tuple[Agent, list]:
         if kb_tool:
             tools.append(kb_tool)
 
+    # Context providers
+    context_providers = []
+
     skills_provider = None
     if SKILLS_PATH.is_dir():
         skills_source = FileSkillsSource(SKILLS_PATH)
         skills_provider = SkillsProvider(skills_source)
+        context_providers.append(skills_provider)
+
+    # Content Understanding provider (optional — only when endpoint is configured)
+    cu_provider = None
+    if _CU_ENDPOINT:
+        from agent_framework.foundry import ContentUnderstandingContextProvider
+        cu_provider = ContentUnderstandingContextProvider(
+            endpoint=_CU_ENDPOINT,
+            credential=credential,
+            output_sections=["markdown", "fields"],
+        )
+        context_providers.append(cu_provider)
+        logger.info("Content Understanding enabled: %s", _CU_ENDPOINT)
 
     agent = Agent(
         client=client,
         name="fibey",
         instructions=_load_system_prompt(),
         tools=tools,
-        context_providers=[skills_provider] if skills_provider else None,
+        context_providers=context_providers if context_providers else None,
     )
 
     return agent, tools
 
 
-async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
+async def run_agent(
+    message: str,
+    session: dict,
+    attachments: list[dict] | None = None,
+) -> AsyncGenerator[dict, None]:
     """
     Run the agent and yield streaming events.
 
@@ -401,14 +427,40 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
         agent_session = AgentSession()
         session["agent_session"] = agent_session
 
+    # Build input: text + optional file attachments as Content objects
+    input_content: list[Any] = [message]
+    if attachments and _CU_ENDPOINT:
+        for att in attachments:
+            data_url = att.get("data_url", "")
+            filename = att.get("name", "file")
+            media_type = att.get("type", "application/octet-stream")
+            if data_url:
+                # Extract raw base64 bytes from data URL
+                if "," in data_url:
+                    raw_b64 = data_url.split(",", 1)[1]
+                    file_bytes = base64.b64decode(raw_b64)
+                else:
+                    file_bytes = base64.b64decode(data_url)
+                input_content.append(
+                    Content.from_data(
+                        file_bytes,
+                        media_type,
+                        additional_properties={"filename": filename},
+                    )
+                )
+                logger.info("Attached file: %s (%s, %d bytes)", filename, media_type, len(file_bytes))
+
     async with AsyncExitStack() as stack:
         # Initialize MCP tools
         for tool in tools:
             if isinstance(tool, MCPStreamableHTTPTool):
                 await stack.enter_async_context(tool)
 
+        # Use enriched input when files are attached, plain text otherwise
+        agent_input = input_content if len(input_content) > 1 else message
+
         stream = agent.run(
-            message,
+            agent_input,
             stream=True,
             session=agent_session,
         )

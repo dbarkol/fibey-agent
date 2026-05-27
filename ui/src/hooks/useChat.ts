@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import {
   type ChatMessage,
   type ActivityEvent,
+  type FileAttachment,
   sendMessage,
 } from "../api/client";
 
@@ -23,13 +24,14 @@ export function useChat() {
   const sessionIdRef = useRef(crypto.randomUUID());
   const assistantIdRef = useRef<string>("");
 
-  const send = useCallback(async (text: string) => {
-    if (!text.trim() || isStreaming) return;
+  const send = useCallback(async (text: string, attachments?: FileAttachment[]) => {
+    if ((!text.trim() && (!attachments || attachments.length === 0)) || isStreaming) return;
 
     const userMsg: ChatMessage = {
       id: nextMessageId(),
       role: "user",
       content: text,
+      attachments,
     };
 
     const assistantMsg: ChatMessage = {
@@ -112,7 +114,7 @@ export function useChat() {
       onDone() {
         setIsStreaming(false);
       },
-    });
+    }, attachments);
   }, [isStreaming]);
 
   const resetChat = useCallback(async () => {

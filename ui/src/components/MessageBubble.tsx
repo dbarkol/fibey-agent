@@ -176,9 +176,32 @@ export default function MessageBubble({ message, isStreaming }: MessageBubblePro
         }`}
       >
         {isUser ? (
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">
-            {message.content}
-          </p>
+          <>
+            {/* Attachment previews for user messages */}
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {message.attachments.map((att, i) => (
+                  <div key={i} className="overflow-hidden rounded-lg">
+                    {att.type.startsWith("image/") ? (
+                      <img
+                        src={att.dataUrl}
+                        alt={att.name}
+                        className="max-h-32 max-w-[200px] rounded-lg object-cover"
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1.5 rounded-lg bg-blue-500/30 px-2.5 py-1.5 text-xs">
+                        <span className="material-icons-outlined text-[14px]">picture_as_pdf</span>
+                        <span className="max-w-[150px] truncate">{att.name}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">
+              {message.content}
+            </p>
+          </>
         ) : (
           <>
             <div className="markdown-body">

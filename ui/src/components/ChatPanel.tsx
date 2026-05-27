@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { ChatMessage } from "../api/client";
+import type { ChatMessage, FileAttachment } from "../api/client";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
 import PromptSuggestions from "./PromptSuggestions";
@@ -7,10 +7,11 @@ import PromptSuggestions from "./PromptSuggestions";
 interface ChatPanelProps {
   messages: ChatMessage[];
   isStreaming: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments?: FileAttachment[]) => void;
+  enableAttachments?: boolean;
 }
 
-export default function ChatPanel({ messages, isStreaming, onSend }: ChatPanelProps) {
+export default function ChatPanel({ messages, isStreaming, onSend, enableAttachments }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,7 +55,7 @@ export default function ChatPanel({ messages, isStreaming, onSend }: ChatPanelPr
       </div>
 
       {/* Input */}
-      <ChatInput onSend={onSend} disabled={isStreaming} />
+      <ChatInput onSend={onSend} disabled={isStreaming} enableAttachments={enableAttachments} />
     </div>
   );
 }

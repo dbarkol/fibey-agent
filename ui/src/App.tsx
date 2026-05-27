@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useChat } from "./hooks/useChat";
 import { useTheme } from "./hooks/useTheme";
+import { fetchFeatures } from "./api/client";
 import ChatPanel from "./components/ChatPanel";
 import ActivitySidebar from "./components/ActivitySidebar";
 
@@ -8,6 +9,11 @@ export default function App() {
   const { messages, activities, isStreaming, send, resetChat, clearActivities } = useChat();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { theme, toggle: toggleTheme } = useTheme();
+  const [enableAttachments, setEnableAttachments] = useState(false);
+
+  useEffect(() => {
+    fetchFeatures().then((f) => setEnableAttachments(f.content_understanding));
+  }, []);
 
   return (
     <div className="flex h-screen flex-col bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
@@ -54,6 +60,7 @@ export default function App() {
           messages={messages}
           isStreaming={isStreaming}
           onSend={send}
+          enableAttachments={enableAttachments}
         />
         {sidebarOpen && (
           <ActivitySidebar

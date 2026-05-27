@@ -102,6 +102,7 @@ cp .env.example .env
 | `HOSTED_AGENT_NAME` | Hosted agent name (hosted mode only) |
 | `CONTAINERAPP_AGENT_URL` | Agent service URL (containerapp mode only) |
 | `TOOLBOX_MCP_URL` | Foundry Toolbox MCP endpoint (without api-version - automatically appended) |
+| `AZURE_CONTENTUNDERSTANDING_ENDPOINT` | *(Optional)* Azure AI Foundry endpoint for Content Understanding. When set, enables the "+" file attachment button in the UI for uploading PDFs and images. Files are analyzed via CU and work orders can be auto-extracted. Example: `https://your-foundry.services.ai.azure.com/` |
 
 **Important:** The `TOOLBOX_MCP_URL` should NOT include the `api-version` query parameter. The agent code automatically appends `?api-version=v1` to the URL. This is a critical requirement discovered during integration - the Toolbox MCP endpoint requires `api-version=v1` (not date-based versions like `2024-08-01-preview`).
 

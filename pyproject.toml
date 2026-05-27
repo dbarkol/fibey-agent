@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.0.0",
     "agent-framework>=1.4.0",
     "agent-framework-foundry-hosting",
+    "agent-framework-azure-contentunderstanding",
     "mcp>=1.24.0,<2",
     "httpx",
 ]

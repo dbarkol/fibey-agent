@@ -14,6 +14,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Content Understanding feature flag
+CU_ENDPOINT = os.getenv("AZURE_CONTENTUNDERSTANDING_ENDPOINT", "")
+
 app = FastAPI(title="Fibey Agent Gateway")
 
 app.add_middleware(
@@ -46,14 +49,14 @@ def _sse(event: str, data: dict | str) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
-async def _run_local(message: str, session_id: str) -> AsyncGenerator[str, None]:
+async def _run_local(message: str, session_id: str, attachments: list[dict] | None = None) -> AsyncGenerator[str, None]:
     """Run the agent locally and stream SSE events."""
     from fibey.agent.agent import run_agent
 
     session = sessions.setdefault(session_id, {})
 
     try:
-        async for event in run_agent(message, session):
+        async for event in run_agent(message, session, attachments=attachments):
             if event["type"] == "delta":
                 yield _sse("delta", {"content": event["content"]})
             elif event["type"] == "activity":
@@ -324,8 +327,11 @@ async def chat(request: Request):
     body = await request.json()
     message = body.get("message", "")
     session_id = body.get("session_id", str(uuid.uuid4()))
+    attachments = body.get("attachments", None)
 
-    logger.info("Gateway mode: %s, message: %s, session: %s", AGENT_MODE, message[:50], session_id)
+    logger.info("Gateway mode: %s, message: %s, session: %s, attachments: %s",
+                AGENT_MODE, message[:50], session_id,
+                len(attachments) if attachments else 0)
     
     if AGENT_MODE == "hosted":
         logger.info("Using hosted agent mode")
@@ -335,7 +341,7 @@ async def chat(request: Request):
         generator = _run_containerapp(message, session_id)
     else:
         logger.info("Using local agent mode")
-        generator = _run_local(message, session_id)
+        generator = _run_local(message, session_id, attachments=attachments)
 
     return StreamingResponse(
         generator,
@@ -359,3 +365,9 @@ async def reset_session(request: Request):
 @app.get("/api/health")
 async def health():
     return {"status": "healthy", "mode": AGENT_MODE}
+
+
+@app.get("/api/features")
+async def features():
+    """Return feature flags so the UI can conditionally enable capabilities."""
+    return {"content_understanding": bool(CU_ENDPOINT)}
