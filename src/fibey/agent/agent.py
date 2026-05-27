@@ -75,6 +75,17 @@ class _ToolboxAuth(httpx.Auth):
         yield request
 
 
+class _ToolboxApiKeyAuth(httpx.Auth):
+    """httpx Auth that injects the Cognitive Services account key for Toolbox MCP."""
+
+    def __init__(self, api_key: str):
+        self._api_key = api_key
+
+    def auth_flow(self, request):
+        request.headers["api-key"] = self._api_key
+        yield request
+
+
 def _create_toolbox_mcp(credential) -> MCPStreamableHTTPTool | None:
     """Create the Toolbox MCP tool if endpoint is configured."""
     toolbox_url = os.getenv("TOOLBOX_MCP_URL", "")
@@ -82,15 +93,22 @@ def _create_toolbox_mcp(credential) -> MCPStreamableHTTPTool | None:
         logger.warning("TOOLBOX_MCP_URL not set — running without Toolbox")
         return None
 
-    # Add api-version query parameter if not already present
     if "api-version" not in toolbox_url:
         separator = "&" if "?" in toolbox_url else "?"
         toolbox_url = f"{toolbox_url}{separator}api-version=v1"
     
     logger.info("Toolbox MCP URL: %s", toolbox_url)
 
+    api_key = os.getenv("TOOLBOX_API_KEY", "")
+    if api_key:
+        logger.info("Toolbox auth: api-key (TOOLBOX_API_KEY)")
+        auth = _ToolboxApiKeyAuth(api_key)
+    else:
+        logger.info("Toolbox auth: Entra bearer token")
+        auth = _ToolboxAuth(credential)
+
     auth_http_client = httpx.AsyncClient(
-        auth=_ToolboxAuth(credential),
+        auth=auth,
         headers={"Foundry-Features": "Toolboxes=V1Preview"},
         timeout=120.0,
     )
