@@ -392,6 +392,7 @@ def create_agent() -> tuple[Agent, list]:
             endpoint=_CU_ENDPOINT,
             credential=credential,
             output_sections=["markdown", "fields"],
+            max_wait=None,  # Wait until analysis completes (no background deferral)
         )
         context_providers.append(cu_provider)
         logger.info("Content Understanding enabled: %s", _CU_ENDPOINT)
