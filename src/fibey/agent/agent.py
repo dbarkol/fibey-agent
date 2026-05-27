@@ -491,15 +491,14 @@ async def run_agent(
                         # Accumulate arguments across streaming chunks
                         raw_args = getattr(content, "arguments", None) or ""
                         if isinstance(raw_args, dict):
-                            import json as _json
-                            raw_args = _json.dumps(raw_args)
+                            raw_args = json.dumps(raw_args)
                         if call_id not in pending_args:
                             pending_args[call_id] = raw_args
                             # Try to detect duplicates early (works when args arrive in one chunk)
                             skip = False
                             if tool_name == "load_skill":
                                 try:
-                                    parsed = _json.loads(raw_args) if raw_args else {}
+                                    parsed = json.loads(raw_args) if raw_args else {}
                                     skill_key = parsed.get("skill_name", "")
                                 except Exception:
                                     skill_key = ""
@@ -509,7 +508,7 @@ async def run_agent(
                                     seen_skill_loads.add(skill_key)
                             elif raw_args:
                                 try:
-                                    _json.loads(raw_args)  # only dedup if args are complete JSON
+                                    json.loads(raw_args)  # only dedup if args are complete JSON
                                     tool_args_key = f"{tool_name}::{raw_args}"
                                     if tool_args_key in seen_tool_args:
                                         skip = True
@@ -536,12 +535,11 @@ async def run_agent(
                         if call_id not in seen_calls:
                             seen_calls.add(call_id)
                             args_str = pending_args.get(call_id, "")
-                            import json as _json
 
                             # Suppress duplicate load_skill for same skill name
                             if tool_name == "load_skill":
                                 try:
-                                    parsed = _json.loads(args_str) if args_str else {}
+                                    parsed = json.loads(args_str) if args_str else {}
                                     skill_name = parsed.get("skill_name", "")
                                 except Exception:
                                     skill_name = ""
@@ -565,7 +563,7 @@ async def run_agent(
 
                                 detail = f"Calling {tool_name}..."
                                 try:
-                                    parsed = _json.loads(args_str) if args_str else {}
+                                    parsed = json.loads(args_str) if args_str else {}
                                     if isinstance(parsed, dict):
                                         for key in ("work_order_id", "part_id", "query"):
                                             val = parsed.get(key)
