@@ -1,3 +1,5 @@
+export type CuMode = "none" | "basic" | "work_order";
+
 export interface FileAttachment {
   name: string;
   type: string;
@@ -33,9 +35,10 @@ export async function sendMessage(
   message: string,
   sessionId: string,
   callbacks: StreamCallbacks,
-  attachments?: FileAttachment[]
+  attachments?: FileAttachment[],
+  cuMode: CuMode = "none"
 ): Promise<void> {
-  const body: Record<string, unknown> = { message, session_id: sessionId };
+  const body: Record<string, unknown> = { message, session_id: sessionId, cu_mode: cuMode };
   if (attachments && attachments.length > 0) {
     body.attachments = attachments.map((a) => ({
       name: a.name,
@@ -128,14 +131,15 @@ export async function resetSession(sessionId: string): Promise<void> {
 
 export interface Features {
   content_understanding: boolean;
+  cu_modes: CuMode[];
 }
 
 export async function fetchFeatures(): Promise<Features> {
   try {
     const response = await fetch("/api/features");
-    if (!response.ok) return { content_understanding: false };
+    if (!response.ok) return { content_understanding: false, cu_modes: ["none"] };
     return (await response.json()) as Features;
   } catch {
-    return { content_understanding: false };
+    return { content_understanding: false, cu_modes: ["none"] };
   }
 }

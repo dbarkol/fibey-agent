@@ -1,10 +1,13 @@
 import { useState, useRef, useCallback } from "react";
-import type { ActivityEvent } from "../api/client";
+import type { ActivityEvent, CuMode } from "../api/client";
 
 interface ActivitySidebarProps {
   activities: ActivityEvent[];
   isStreaming: boolean;
   onClear?: () => void;
+  enableAttachments?: boolean;
+  cuMode?: CuMode;
+  onCuModeChange?: (mode: CuMode) => void;
 }
 
 /** Map raw tool names to friendly display names and icons */
@@ -157,7 +160,7 @@ function getSkillName(activity: ActivityEvent): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
-export default function ActivitySidebar({ activities, isStreaming, onClear }: ActivitySidebarProps) {
+export default function ActivitySidebar({ activities, isStreaming, onClear, enableAttachments, cuMode = "none", onCuModeChange }: ActivitySidebarProps) {
   const completed = activities.filter((a) => a.status === "complete").length;
   const running = activities.filter((a) => a.status === "running").length;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -210,7 +213,60 @@ export default function ActivitySidebar({ activities, isStreaming, onClear }: Ac
         className="absolute left-0 top-0 bottom-0 z-20 w-1 cursor-col-resize hover:bg-blue-400/40 active:bg-blue-500/50"
         onMouseDown={startResize}
       />
-      {/* Header */}
+
+      {/* CU Context Provider — only shown when CU endpoint is configured */}
+      {enableAttachments && (
+        <div className="border-b border-gray-200 dark:border-gray-800">
+          <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+            <span className="material-icons-outlined text-[18px] text-gray-500 dark:text-gray-400">
+              auto_awesome
+            </span>
+            <h2 className="text-sm font-semibold">CU Context Provider</h2>
+          </div>
+          <div className="flex flex-col gap-1 px-4 py-3">
+            {(
+              [
+                { mode: "none" as CuMode, label: "None", icon: "block", desc: "No content understanding" },
+                { mode: "basic" as CuMode, label: "Basic CU", icon: "description", desc: "prebuilt-layout extraction" },
+                { mode: "work_order" as CuMode, label: "Classify & Analyze Work Order", icon: "assignment_turned_in", desc: "cu_demo_work_order analyzer" },
+              ] as const
+            ).map(({ mode, label, icon, desc }) => {
+              const active = cuMode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => onCuModeChange?.(mode)}
+                  className={`flex items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                    active
+                      ? "bg-blue-50 ring-1 ring-blue-300 dark:bg-blue-900/30 dark:ring-blue-700"
+                      : "hover:bg-gray-100 dark:hover:bg-gray-800/60"
+                  }`}
+                >
+                  <span className={`material-icons-outlined mt-0.5 text-[16px] shrink-0 ${active ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-gray-500"}`}>
+                    {icon}
+                  </span>
+                  <div className="min-w-0">
+                    <div className={`text-[12px] font-medium leading-tight ${active ? "text-blue-700 dark:text-blue-300" : "text-gray-700 dark:text-gray-300"}`}>
+                      {label}
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500 font-mono">
+                      {desc}
+                    </div>
+                  </div>
+                  {active && (
+                    <span className="material-icons-outlined ml-auto shrink-0 text-[14px] text-blue-500 dark:text-blue-400">
+                      radio_button_checked
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Activity header */}
       <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
         <span className="material-icons-outlined text-[18px] text-gray-500 dark:text-gray-400">
           timeline

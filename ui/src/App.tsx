@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useChat } from "./hooks/useChat";
 import { useTheme } from "./hooks/useTheme";
-import { fetchFeatures } from "./api/client";
+import { fetchFeatures, type CuMode } from "./api/client";
 import ChatPanel from "./components/ChatPanel";
 import ActivitySidebar from "./components/ActivitySidebar";
 
@@ -10,10 +10,15 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { theme, toggle: toggleTheme } = useTheme();
   const [enableAttachments, setEnableAttachments] = useState(false);
+  const [cuMode, setCuMode] = useState<CuMode>("none");
 
   useEffect(() => {
     fetchFeatures().then((f) => setEnableAttachments(f.content_understanding));
   }, []);
+
+  const handleSend = (text: string, attachments?: import("./api/client").FileAttachment[]) => {
+    send(text, attachments, cuMode);
+  };
 
   return (
     <div className="flex h-screen flex-col bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
@@ -59,14 +64,17 @@ export default function App() {
         <ChatPanel
           messages={messages}
           isStreaming={isStreaming}
-          onSend={send}
-          enableAttachments={enableAttachments}
+          onSend={handleSend}
+          enableAttachments={enableAttachments && cuMode !== "none"}
         />
         {sidebarOpen && (
           <ActivitySidebar
             activities={activities}
             isStreaming={isStreaming}
             onClear={clearActivities}
+            enableAttachments={enableAttachments}
+            cuMode={cuMode}
+            onCuModeChange={setCuMode}
           />
         )}
       </div>

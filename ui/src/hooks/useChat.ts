@@ -3,6 +3,7 @@ import {
   type ChatMessage,
   type ActivityEvent,
   type FileAttachment,
+  type CuMode,
   sendMessage,
 } from "../api/client";
 
@@ -24,7 +25,7 @@ export function useChat() {
   const sessionIdRef = useRef(crypto.randomUUID());
   const assistantIdRef = useRef<string>("");
 
-  const send = useCallback(async (text: string, attachments?: FileAttachment[]) => {
+  const send = useCallback(async (text: string, attachments?: FileAttachment[], cuMode: CuMode = "none") => {
     if ((!text.trim() && (!attachments || attachments.length === 0)) || isStreaming) return;
 
     const userMsg: ChatMessage = {
@@ -114,7 +115,7 @@ export function useChat() {
       onDone() {
         setIsStreaming(false);
       },
-    }, attachments);
+    }, attachments, cuMode);
   }, [isStreaming]);
 
   const resetChat = useCallback(async () => {
