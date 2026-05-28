@@ -80,10 +80,12 @@ FIELD_SCHEMA = ContentFieldSchema(
             method=GenerationMethod.EXTRACT,
             description=(
                 "The name of the field technician assigned to perform the work. "
-                "Look in the 'Dispatch Information' row near the top of the document — "
-                "it contains 'Assigned Tech: <name>'. "
+                "Look in the 'Dispatch Log' row near the top of the document — "
+                "it contains 'Route → <name>' or 'Route → <name>'. "
+                "Extract the name that appears immediately after 'Route →' or 'Route ->'."
                 "Do NOT use the 'Field Technical Contact' field in the document header — "
                 "that is the on-site building or facilities contact person, not the technician. "
+                "Do NOT use the Dispatcher name (that is the person who sent the work order). "
                 "Do NOT use names from the 'Site Access & Contact' section."
             ),
         ),

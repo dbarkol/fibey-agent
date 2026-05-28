@@ -160,21 +160,20 @@ def header_table(wo, styles):
 
 
 def dispatch_table(wo, styles):
-    """Small dispatch routing block — internal metadata, not the main contact header.
-    
-    Demo intent: Basic CU + LLM sees 'Field Technical Contact: Marcus Tran' prominently
-    in the header and returns Marcus Tran as the technician (wrong). The custom analyzer
-    is explicitly instructed to extract the assigned technician from this Dispatch
-    Information block instead, returning J. Martinez (correct).
+    """Dispatch routing block — J. Martinez appears here as a routing reference,
+    NOT labeled as 'technician'. The LLM reading flat markdown sees Marcus Tran as
+    'Field Technical Contact' (the most prominent labeled name) and returns that.
+    The custom analyzer description points exactly to the name after 'Route →' in
+    this block, so it returns J. Martinez (correct).
     """
     DISPATCH_BLUE = colors.HexColor("#E8EEF7")
     rows = [[
-        Paragraph("<b>Dispatch Information</b>", styles["FieldLabel"]),
-        Paragraph(f"Assigned Tech: {wo['assigned_technician']}  |  "
-                  f"Dispatch ID: WO-DISP-0518  |  "
-                  f"Auth: R. Singh  |  {wo['created_at']}", styles["FieldValue"]),
+        Paragraph("<b>Dispatch Log</b>", styles["FieldLabel"]),
+        Paragraph(f"2026-05-18 08:15 PDT  |  NOC Ref: WO-DISP-0518  |  "
+                  f"Dispatcher: R. Singh  |  Route → {wo['assigned_technician']}  |  Status: Pending Accept",
+                  styles["FieldValue"]),
     ]]
-    t = Table(rows, colWidths=[1.3*inch, 5.7*inch])
+    t = Table(rows, colWidths=[1.1*inch, 5.9*inch])
     t.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, -1), DISPATCH_BLUE),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),

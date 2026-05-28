@@ -131,17 +131,16 @@ With Basic CU, the document is converted to flat markdown and passed to the LLM
 without any field-level guidance. The LLM reads the most prominent "technical
 person" label and returns Marcus Tran.
 
-The actual assigned technician (J. Martinez) is buried in the **Dispatch
-Information** row near the top — a small table formatted as internal routing
-metadata:
+The actual assigned technician (J. Martinez) is buried in the **Dispatch Log**
+row near the top — a small table formatted as an internal routing audit entry:
 
 ```
-Dispatch Information | Assigned Tech: J. Martinez  |  Dispatch ID: WO-DISP-0518  | ...
+Dispatch Log | 2026-05-18 08:15 PDT  |  NOC Ref: WO-DISP-0518  |  Dispatcher: R. Singh  |  Route → J. Martinez  |  Status: Pending Accept
 ```
 
-Without explicit instructions pointing to that exact location, the LLM overlooks
-it. This demonstrates the limitation of Basic CU for documents with ambiguous
-or misleadingly labeled fields.
+J. Martinez appears after `Route →` with no "technician" or "assigned" label
+anywhere near it. The LLM reads this as routing metadata and doesn't connect
+it to the technician role.
 
 ---
 
