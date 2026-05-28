@@ -89,8 +89,10 @@ CHECKLIST = [
 ]
 
 SIGN_FIELDS = [
-    # (role_label, print_name)  — Signature stays blank (OPEN work order)
-    ("Technician Signature", "J. Martinez"),   # Print Name pre-filled; Signature blank
+    # (role_label, print_name) — both blank, OPEN work order not yet signed
+    # J. Martinez is ONLY in the Dispatch Log as "Route → J. Martinez"
+    # which reads as routing metadata, not an "assigned technician" label
+    ("Technician Signature", ""),
     ("Supervisor Sign-off",  ""),
 ]
 

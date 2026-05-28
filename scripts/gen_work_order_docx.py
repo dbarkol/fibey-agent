@@ -187,8 +187,8 @@ def main():
         c.paragraphs[0].runs[0].bold = True
         set_cell_bg(c, "c5cae9")
     sign_tbl.rows[1].cells[0].text = "Technician Signature"
-    sign_tbl.rows[1].cells[1].text = ""                               # Signature blank
-    sign_tbl.rows[1].cells[2].text = expected["assigned_technician"]  # J. Martinez in Print Name
+    sign_tbl.rows[1].cells[1].text = ""   # Signature blank
+    sign_tbl.rows[1].cells[2].text = ""   # Print Name blank — J. Martinez only in Dispatch Log
     sign_tbl.rows[1].cells[3].text = ""
 
     doc.add_paragraph()
