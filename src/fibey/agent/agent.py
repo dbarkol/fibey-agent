@@ -349,7 +349,7 @@ def _create_work_order_tools() -> list[FunctionTool]:
 
 _CU_ANALYZER_IDS = {
     "basic": "prebuilt-layout",
-    "work_order": "cu_demo_work_order",
+    "work_order": "cu_demo_classify_and_analyze",
 }
 
 
