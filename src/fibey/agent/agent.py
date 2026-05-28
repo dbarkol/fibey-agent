@@ -443,21 +443,24 @@ async def run_agent(
 
     # Build input: text + optional file attachments as Content objects
     input_content: list[Any] = [message]
-    if attachments and cu_mode != "none" and _CU_ENDPOINT:
+    if attachments:
         for att in attachments:
             data_url = att.get("data_url", "")
             filename = att.get("name", "file")
             media_type = att.get("type", "application/octet-stream")
-            if data_url:
-                # Namespace filename by cu_mode so the same file can be re-analyzed
+            if not data_url:
+                continue
+            # Extract raw bytes from data URL
+            if "," in data_url:
+                raw_b64 = data_url.split(",", 1)[1]
+                file_bytes = base64.b64decode(raw_b64)
+            else:
+                file_bytes = base64.b64decode(data_url)
+
+            if cu_mode != "none" and _CU_ENDPOINT:
+                # CU mode: namespace filename so the same file can be re-analyzed
                 # under a different mode without hitting the session duplicate check.
                 namespaced_filename = f"{filename}:{cu_mode}"
-                # Extract raw base64 bytes from data URL
-                if "," in data_url:
-                    raw_b64 = data_url.split(",", 1)[1]
-                    file_bytes = base64.b64decode(raw_b64)
-                else:
-                    file_bytes = base64.b64decode(data_url)
                 input_content.append(
                     Content.from_data(
                         file_bytes,
@@ -465,7 +468,15 @@ async def run_agent(
                         additional_properties={"filename": namespaced_filename},
                     )
                 )
-                logger.info("Attached file: %s as %s (%s, %d bytes)", filename, namespaced_filename, media_type, len(file_bytes))
+                logger.info("Attached file (CU): %s as %s (%s, %d bytes)", filename, namespaced_filename, media_type, len(file_bytes))
+            else:
+                # None mode: pass raw file bytes directly to OpenAI (no CU processing).
+                # OpenAI will reject unsupported types (e.g. docx) — this is intentional
+                # to demonstrate the contrast with CU modes.
+                input_content.append(
+                    Content.from_data(file_bytes, media_type)
+                )
+                logger.info("Attached file (OpenAI only): %s (%s, %d bytes)", filename, media_type, len(file_bytes))
 
     async with AsyncExitStack() as stack:
         # Initialize MCP tools

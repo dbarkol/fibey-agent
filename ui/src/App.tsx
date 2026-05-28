@@ -65,7 +65,7 @@ export default function App() {
           messages={messages}
           isStreaming={isStreaming}
           onSend={handleSend}
-          enableAttachments={enableAttachments && cuMode !== "none"}
+          enableAttachments={enableAttachments}
         />
         {sidebarOpen && (
           <ActivitySidebar
