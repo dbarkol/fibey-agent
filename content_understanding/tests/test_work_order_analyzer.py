@@ -16,7 +16,7 @@ from .conftest import (
 ANALYZER_ID = "cu_demo_work_order"
 
 WO_FIELDS = ["title", "description", "status", "priority",
-             "assigned_technician", "site_technician", "location", "due_date", "parts_needed"]
+             "assigned_technician", "location", "due_date", "parts_needed"]
 
 
 @pytest.fixture(scope="module")
@@ -59,13 +59,6 @@ class TestWorkOrderPdf:
         assert fields.get("assigned_technician") == expected_pdf["assigned_technician"], (
             f"assigned_technician: got '{fields.get('assigned_technician')}', "
             f"expected '{expected_pdf['assigned_technician']}'"
-        )
-
-    def test_site_technician_is_empty(self, fields):
-        """On-site technician is optional; the demo doc has none assigned."""
-        val = fields.get("site_technician")
-        assert val is None or val == "" or val == "—", (
-            f"site_technician should be empty/null, got '{val}'"
         )
 
     def test_due_date_matches_expected(self, fields, expected_pdf):
@@ -137,13 +130,6 @@ class TestWorkOrderDocx:
     def test_assigned_technician_matches_expected(self, fields, expected_pdf):
         assert fields.get("assigned_technician") == expected_pdf["assigned_technician"]
 
-    def test_site_technician_is_empty(self, fields):
-        """On-site technician should be null/empty in this work order."""
-        val = fields.get("site_technician")
-        assert val is None or val == "" or val == "—", (
-            f"site_technician should be empty/null, got '{val}'"
-        )
-
     @pytest.mark.xfail(reason="Custom analyzer trained on PDF/image — location may not extract from docx", strict=False)
     def test_location_matches_expected(self, fields, expected_pdf):
         assert fields.get("location") == expected_pdf["location"]
@@ -179,13 +165,6 @@ class TestScannedWorkOrderPng:
         assert fields.get("assigned_technician") == expected_png["assigned_technician"], (
             f"assigned_technician: got '{fields.get('assigned_technician')}', "
             f"expected '{expected_png['assigned_technician']}'"
-        )
-
-    def test_site_technician_is_empty(self, fields):
-        """Scanned handwritten work order — on-site technician field is optional."""
-        val = fields.get("site_technician")
-        assert val is None or val == "" or val == "—", (
-            f"site_technician should be empty/null, got '{val}'"
         )
 
     def test_parts_needed_matches_expected(self, fields, expected_png):
