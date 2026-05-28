@@ -49,14 +49,14 @@ def _sse(event: str, data: dict | str) -> str:
     return f"event: {event}\ndata: {payload}\n\n"
 
 
-async def _run_local(message: str, session_id: str, attachments: list[dict] | None = None) -> AsyncGenerator[str, None]:
+async def _run_local(message: str, session_id: str, attachments: list[dict] | None = None, cu_mode: str = "none") -> AsyncGenerator[str, None]:
     """Run the agent locally and stream SSE events."""
     from fibey.agent.agent import run_agent
 
     session = sessions.setdefault(session_id, {})
 
     try:
-        async for event in run_agent(message, session, attachments=attachments):
+        async for event in run_agent(message, session, attachments=attachments, cu_mode=cu_mode):
             if event["type"] == "delta":
                 yield _sse("delta", {"content": event["content"]})
             elif event["type"] == "activity":
@@ -328,10 +328,11 @@ async def chat(request: Request):
     message = body.get("message", "")
     session_id = body.get("session_id", str(uuid.uuid4()))
     attachments = body.get("attachments", None)
+    cu_mode = body.get("cu_mode", "none")
 
-    logger.info("Gateway mode: %s, message: %s, session: %s, attachments: %s",
+    logger.info("Gateway mode: %s, message: %s, session: %s, attachments: %s, cu_mode: %s",
                 AGENT_MODE, message[:50], session_id,
-                len(attachments) if attachments else 0)
+                len(attachments) if attachments else 0, cu_mode)
     
     if AGENT_MODE == "hosted":
         logger.info("Using hosted agent mode")
@@ -341,7 +342,7 @@ async def chat(request: Request):
         generator = _run_containerapp(message, session_id)
     else:
         logger.info("Using local agent mode")
-        generator = _run_local(message, session_id, attachments=attachments)
+        generator = _run_local(message, session_id, attachments=attachments, cu_mode=cu_mode)
 
     return StreamingResponse(
         generator,
@@ -370,4 +371,8 @@ async def health():
 @app.get("/api/features")
 async def features():
     """Return feature flags so the UI can conditionally enable capabilities."""
-    return {"content_understanding": bool(CU_ENDPOINT)}
+    cu_available = bool(CU_ENDPOINT)
+    return {
+        "content_understanding": cu_available,
+        "cu_modes": ["none", "basic", "work_order"] if cu_available else ["none"],
+    }

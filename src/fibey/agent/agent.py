@@ -347,12 +347,23 @@ def _create_work_order_tools() -> list[FunctionTool]:
     ]
 
 
-def create_agent() -> tuple[Agent, list]:
+_CU_ANALYZER_IDS = {
+    "basic": "prebuilt-layout",
+    "work_order": "cu_demo_work_order",
+}
+
+
+def create_agent(cu_mode: str = "none") -> tuple[Agent, list]:
     """Create the agent with Foundry client and Toolbox MCP connection.
 
     When TOOLBOX_MCP_URL is set, all tools are accessed via the single
     Toolbox MCP endpoint.  When it is empty, the agent connects directly
     to local services (inventory MCP on :8001, work-orders API on :8002).
+
+    cu_mode controls Content Understanding:
+      "none"       — no CU provider
+      "basic"      — prebuilt-layout (general document understanding)
+      "work_order" — cu_demo_work_order custom analyzer
     """
     credential = _get_credential()
 
@@ -384,18 +395,19 @@ def create_agent() -> tuple[Agent, list]:
         skills_provider = SkillsProvider(skills_source)
         context_providers.append(skills_provider)
 
-    # Content Understanding provider (optional — only when endpoint is configured)
-    cu_provider = None
-    if _CU_ENDPOINT:
+    # Content Understanding provider (optional — driven by cu_mode)
+    analyzer_id = _CU_ANALYZER_IDS.get(cu_mode)
+    if analyzer_id and _CU_ENDPOINT:
         from agent_framework.foundry import ContentUnderstandingContextProvider
         cu_provider = ContentUnderstandingContextProvider(
             endpoint=_CU_ENDPOINT,
             credential=credential,
+            analyzer_id=analyzer_id,
             output_sections=["markdown", "fields"],
             max_wait=None,  # Wait until analysis completes (no background deferral)
         )
         context_providers.append(cu_provider)
-        logger.info("Content Understanding enabled: %s", _CU_ENDPOINT)
+        logger.info("Content Understanding enabled: mode=%s analyzer=%s", cu_mode, analyzer_id)
 
     agent = Agent(
         client=client,
@@ -412,6 +424,7 @@ async def run_agent(
     message: str,
     session: dict,
     attachments: list[dict] | None = None,
+    cu_mode: str = "none",
 ) -> AsyncGenerator[dict, None]:
     """
     Run the agent and yield streaming events.
@@ -421,7 +434,7 @@ async def run_agent(
     - {"type": "activity", "tool": "...", "status": "...", "detail": "..."}
     - {"type": "citation", "source": "...", "url": "..."}
     """
-    agent, tools = create_agent()
+    agent, tools = create_agent(cu_mode=cu_mode)
 
     agent_session = session.get("agent_session")
     if not agent_session:
@@ -430,12 +443,15 @@ async def run_agent(
 
     # Build input: text + optional file attachments as Content objects
     input_content: list[Any] = [message]
-    if attachments and _CU_ENDPOINT:
+    if attachments and cu_mode != "none" and _CU_ENDPOINT:
         for att in attachments:
             data_url = att.get("data_url", "")
             filename = att.get("name", "file")
             media_type = att.get("type", "application/octet-stream")
             if data_url:
+                # Namespace filename by cu_mode so the same file can be re-analyzed
+                # under a different mode without hitting the session duplicate check.
+                namespaced_filename = f"{filename}:{cu_mode}"
                 # Extract raw base64 bytes from data URL
                 if "," in data_url:
                     raw_b64 = data_url.split(",", 1)[1]
@@ -446,10 +462,10 @@ async def run_agent(
                     Content.from_data(
                         file_bytes,
                         media_type,
-                        additional_properties={"filename": filename},
+                        additional_properties={"filename": namespaced_filename},
                     )
                 )
-                logger.info("Attached file: %s (%s, %d bytes)", filename, media_type, len(file_bytes))
+                logger.info("Attached file: %s as %s (%s, %d bytes)", filename, namespaced_filename, media_type, len(file_bytes))
 
     async with AsyncExitStack() as stack:
         # Initialize MCP tools
