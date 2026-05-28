@@ -12,7 +12,7 @@ extraction is tested separately in test_work_order_analyzer.py.
 import pytest
 from .conftest import (
     analyze_binary, get_category_from_result,
-    WORK_ORDER_PDF, SCANNED_PNG, TRAINING_CERT_PDF,
+    WORK_ORDER_PDF, WORK_ORDER_DOCX, SCANNED_PNG, TRAINING_CERT_PDF,
 )
 
 CLASSIFIER_ID = "cu_demo_classify_and_analyze"
@@ -24,6 +24,14 @@ class TestClassification:
         category = get_category_from_result(result)
         assert category == "work_order", (
             f"Expected 'work_order' for work_order_fiber_splice.pdf, got '{category}'"
+        )
+
+    @pytest.mark.xfail(reason="Classifier trained on PDF/image work orders — docx may route to 'other'", strict=False)
+    def test_work_order_docx_classified_as_work_order(self, cu_client):
+        result = analyze_binary(cu_client, CLASSIFIER_ID, WORK_ORDER_DOCX)
+        category = get_category_from_result(result)
+        assert category == "work_order", (
+            f"Expected 'work_order' for work_order_fiber_splice.docx, got '{category}'"
         )
 
     def test_scanned_png_classified_as_work_order(self, cu_client):

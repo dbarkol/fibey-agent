@@ -25,6 +25,7 @@ load_dotenv(_REPO_ROOT / ".env")
 DEMO_FILES = _REPO_ROOT / "content_understanding" / "demo_files"
 
 WORK_ORDER_PDF = DEMO_FILES / "work_order_fiber_splice.pdf"
+WORK_ORDER_DOCX = DEMO_FILES / "work_order_fiber_splice.docx"
 SCANNED_PNG = DEMO_FILES / "work_order_scanned.png"
 TRAINING_CERT_PDF = DEMO_FILES / "safety_cert_splicing.pdf"
 
@@ -33,6 +34,7 @@ MIME_MAP = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 
