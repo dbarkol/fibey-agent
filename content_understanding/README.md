@@ -119,25 +119,28 @@ discuss the work order. However, it returns **Marcus Tran** as the assigned
 technician — which is **wrong**. The correct technician is **J. Martinez**.
 
 **Why does this happen?**
-The document is deliberately designed to be ambiguous for a plain LLM. The
-document header prominently shows:
+The document is deliberately designed to mislead a plain LLM. The document header
+prominently shows:
 
 ```
-Field Technical Contact:  John Smith
+Assigned Field Technician:  John Smith
 ```
 
-This is the *Network Operations Supervisor* listed as the site contact — not the
-assigned technician. With Basic CU, the document is converted to flat markdown
-and passed to the LLM without any field-level guidance. The LLM reads the most
-prominent "technical person" label and returns John Smith.
+The label explicitly says "Assigned Field Technician" — but it points to the wrong person
+(John Smith is the Network Operations Supervisor listed as the site contact). With Basic CU,
+the document is converted to flat markdown and the LLM reads this label at face value,
+confidently returning **John Smith**.
 
-The actual assigned technician (J. Martinez) appears in two subtle places:
-1. The **Dispatch Log** row: `Route → J. Martinez | Status: Pending Accept`
-2. The **Sign-Off table** Print Name column (pre-filled, but no "Assigned Technician" label nearby)
+The actual assigned technician (J. Martinez) appears only in the **Dispatch Log** row,
+formatted as an internal routing audit entry:
 
-Without explicit instructions pointing to those locations, the LLM overlooks
-them. This demonstrates the limitation of Basic CU for documents with ambiguous
-or misleadingly labeled fields.
+```
+Dispatch Log | 2026-05-18 08:15 PDT  |  NOC Ref: WO-DISP-0518  |  Dispatcher: R. Singh  |  Route → J. Martinez  |  Status: Pending Accept
+```
+
+Without specific instructions, the LLM doesn't know that the `Route →` value in a dispatch
+log is the true technician assignment — especially when an explicit "Assigned Field Technician"
+label already points elsewhere.
 
 ---
 
