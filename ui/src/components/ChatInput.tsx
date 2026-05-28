@@ -63,7 +63,7 @@ export default function ChatInput({ onSend, disabled, enableAttachments }: ChatI
                 className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-800"
               >
                 <span className="material-icons-outlined text-[14px] text-gray-500">
-                  {file.type.startsWith("image/") ? "image" : "picture_as_pdf"}
+                  {file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "videocam" : file.type.startsWith("audio/") ? "audiotrack" : "picture_as_pdf"}
                 </span>
                 <span className="max-w-[150px] truncate text-gray-700 dark:text-gray-300">
                   {file.name}
@@ -86,7 +86,7 @@ export default function ChatInput({ onSend, disabled, enableAttachments }: ChatI
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,.pdf"
+                accept=".pdf,.docx,.xlsx,.pptx,.txt,.html,.md,.rtf,.xml,.eml,.msg,image/jpeg,image/png,image/tiff,image/bmp,image/heif,image/heic,.wav,.mp3,.m4a,.flac,.ogg,.opus,.wma,.aac,.amr,.3gpp,.mp4,.mov,.avi,.webm,.flv"
                 multiple
                 onChange={handleFileSelect}
                 className="hidden"
