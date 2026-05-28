@@ -80,10 +80,11 @@ FIELD_SCHEMA = ContentFieldSchema(
             method=GenerationMethod.EXTRACT,
             description=(
                 "The name of the field technician assigned to perform the work. "
-                "This is found in the sign-off or signature table under 'Technician Signature' "
-                "or 'Technician' or 'Assignee'. "
+                "Look in the 'Dispatch Information' row near the top of the document — "
+                "it contains 'Assigned Tech: <name>'. "
                 "Do NOT use the 'Field Technical Contact' field in the document header — "
-                "that is the on-site building or facilities contact person, not the technician."
+                "that is the on-site building or facilities contact person, not the technician. "
+                "Do NOT use names from the 'Site Access & Contact' section."
             ),
         ),
         "location": ContentFieldDefinition(

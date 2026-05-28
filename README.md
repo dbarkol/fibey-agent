@@ -122,6 +122,46 @@ scripts/                    # Setup and deployment helper scripts
 docs/                       # Architecture, deployment, and dev docs
 ```
 
+## Content Understanding Demo
+
+Fibey supports Azure Content Understanding (CU) for extracting structured work
+order data from uploaded documents (PDF, images, Word). When
+`AZURE_CONTENTUNDERSTANDING_ENDPOINT` is configured, a "+" attachment button
+appears in the chat UI and a **CU mode selector** is shown in the Activity
+sidebar.
+
+**Three modes are available:**
+
+| Mode | What it does |
+|---|---|
+| **None** | Plain OpenAI — no document understanding |
+| **Basic CU** | Converts the document to markdown via `prebuilt-layout` and passes it to the LLM |
+| **Classify & Analyze Work Order** | Classifies the document type, then runs a custom field extractor if it's a work order |
+
+**Quick demo sequence** (full walkthrough in [`content_understanding/README.md`](content_understanding/README.md)):
+
+1. **None + `.docx`** → OpenAI rejects the file with an error banner — it cannot read Word documents.
+2. **Basic CU + `.docx`** → CU extracts the document and the agent can discuss it. However, the assigned technician comes back *wrong* (Marcus Tran instead of J. Martinez) because the document is deliberately ambiguous — the LLM reads the prominent "Field Technical Contact" label rather than the less obvious "Dispatch Information" row where the real technician is recorded.
+3. **Classify & Analyze + `.docx` or `.pdf`** → The custom analyzer uses explicit field-location instructions, so the technician is now correct (J. Martinez) and all structured fields are extracted cleanly.
+
+**Bonus scenarios:**
+- Upload `safety_cert_splicing.pdf` in Classify & Analyze mode — it's classified as `other` (not a work order), demonstrating that the classifier prevents false positives.
+- Upload `work_order_scanned.png` — a photo of a handwritten paper work order. CU's OCR pipeline reads the handwriting correctly despite real-world photo imperfections.
+
+**Setup:**
+```bash
+# 1. Add to .env
+AZURE_CONTENTUNDERSTANDING_ENDPOINT=https://<your-foundry-resource>.services.ai.azure.com/
+
+# 2. Create CU analyzers (one-time setup)
+uv run python content_understanding/tools/create_work_order_analyzer.py
+uv run python content_understanding/tools/create_classify_and_analyze.py
+```
+
+Demo files are in `content_understanding/demo_files/`.
+
+---
+
 ## Deployment to Azure
 
 To deploy the full stack to Azure Container Apps:

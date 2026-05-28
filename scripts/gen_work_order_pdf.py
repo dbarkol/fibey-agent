@@ -89,7 +89,7 @@ CHECKLIST = [
 ]
 
 SIGN_FIELDS = [
-    ("Technician Signature", "J. Martinez"),
+    ("Technician Signature", ""),       # Blank — work order is OPEN, not yet completed
     ("Supervisor Sign-off",  ""),
 ]
 
@@ -135,9 +135,9 @@ def header_table(wo, styles):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
-    # Metadata row — "Field Technical Contact" is intentionally ambiguous:
-    # could be read as "the technical person on-site (Marcus Tran)" or
-    # "the field technician assigned (Alex Rivera)"
+    # Metadata row — "Field Technical Contact" is intentionally the SITE contact (Marcus Tran),
+    # not the assigned technician. The assigned technician is in the Dispatch Information block
+    # below (see build_pdf). This creates the desired Basic CU ambiguity for the demo.
     meta_data = [
         [Paragraph("<b>Field Technical Contact</b>", styles["FieldLabel"]),
          Paragraph(wo["site_contact"], styles["FieldValue"]),
@@ -157,6 +157,34 @@ def header_table(wo, styles):
     ]))
 
     return [top, meta]
+
+
+def dispatch_table(wo, styles):
+    """Small dispatch routing block — internal metadata, not the main contact header.
+    
+    Demo intent: Basic CU + LLM sees 'Field Technical Contact: Marcus Tran' prominently
+    in the header and returns Marcus Tran as the technician (wrong). The custom analyzer
+    is explicitly instructed to extract the assigned technician from this Dispatch
+    Information block instead, returning J. Martinez (correct).
+    """
+    DISPATCH_BLUE = colors.HexColor("#E8EEF7")
+    rows = [[
+        Paragraph("<b>Dispatch Information</b>", styles["FieldLabel"]),
+        Paragraph(f"Assigned Tech: {wo['assigned_technician']}  |  "
+                  f"Dispatch ID: WO-DISP-0518  |  "
+                  f"Auth: R. Singh  |  {wo['created_at']}", styles["FieldValue"]),
+    ]]
+    t = Table(rows, colWidths=[1.3*inch, 5.7*inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), DISPATCH_BLUE),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
+        ("LINEBELOW",     (0, 0), (-1, -1), 0.5, MID_GRAY),
+    ]))
+    return t
 
 
 def section(title, styles):
@@ -277,6 +305,7 @@ def build_pdf():
 
     # ── PAGE 1 ─────────────────────────────────────────────────────────────────
     story += header_table(WO, styles)
+    story.append(dispatch_table(WO, styles))
 
     # Description
     story += section("Job Description", styles)
@@ -300,6 +329,7 @@ def build_pdf():
     # ── PAGE 2 ─────────────────────────────────────────────────────────────────
     story.append(PageBreak())
     story += header_table(WO, styles)
+    story.append(dispatch_table(WO, styles))
 
     # Checklist
     story += section("Field Completion Checklist", styles)
