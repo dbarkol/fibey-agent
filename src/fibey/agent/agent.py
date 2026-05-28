@@ -500,7 +500,11 @@ async def run_agent(
                 # OpenAI will reject unsupported types (e.g. docx) — this is intentional
                 # to demonstrate the contrast with CU modes.
                 input_content.append(
-                    Content.from_data(file_bytes, media_type)
+                    Content.from_data(
+                        file_bytes,
+                        media_type,
+                        additional_properties={"filename": filename},
+                    )
                 )
                 logger.info("Attached file (OpenAI only): %s (%s, %d bytes)", filename, media_type, len(file_bytes))
 
