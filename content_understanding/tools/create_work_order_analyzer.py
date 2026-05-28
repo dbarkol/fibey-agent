@@ -10,7 +10,7 @@ Usage:
 
     Optionally analyze a file afterwards:
     uv run python content_understanding/tools/create_work_order_analyzer.py \
-        --analyze content_understanding/demo_files/fiber-splice-restoration.pdf
+        --analyze content_understanding/demo_files/work_order_fiber_splice.pdf
 
 Environment (loaded from .env at repo root):
     AZURE_CONTENTUNDERSTANDING_ENDPOINT  — required

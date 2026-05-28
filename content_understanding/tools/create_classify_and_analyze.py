@@ -25,11 +25,11 @@ This enables the demo progression:
 
   # Analyze a file with the classifier (skip create, use existing):
   uv run python content_understanding/tools/create_classify_and_analyze.py \\
-      --analyze-only content_understanding/demo_files/fiber-splice-restoration.pdf
+      --analyze-only content_understanding/demo_files/work_order_fiber_splice.pdf
 
   # Create classifier AND analyze a file:
   uv run python content_understanding/tools/create_classify_and_analyze.py \\
-      --analyze content_understanding/demo_files/fiber-splice-restoration.pdf
+      --analyze content_understanding/demo_files/work_order_fiber_splice.pdf
 
 Environment (loaded from .env at repo root):
     AZURE_CONTENTUNDERSTANDING_ENDPOINT  — required

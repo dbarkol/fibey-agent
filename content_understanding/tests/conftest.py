@@ -24,9 +24,9 @@ load_dotenv(_REPO_ROOT / ".env")
 
 DEMO_FILES = _REPO_ROOT / "content_understanding" / "demo_files"
 
-WORK_ORDER_PDF = DEMO_FILES / "fiber-splice-restoration.pdf"
-SCANNED_PNG = DEMO_FILES / "scanned_work_order.png"
-TRAINING_CERT_PDF = DEMO_FILES / "splicing-safety-cert.pdf"
+WORK_ORDER_PDF = DEMO_FILES / "work_order_fiber_splice.pdf"
+SCANNED_PNG = DEMO_FILES / "work_order_scanned.png"
+TRAINING_CERT_PDF = DEMO_FILES / "safety_cert_splicing.pdf"
 
 MIME_MAP = {
     ".pdf": "application/pdf",
@@ -93,6 +93,14 @@ def get_fields_from_result(result) -> dict:
     content = result.contents[0]
     fields = getattr(content, "fields", None) or {}
     return {name: extract_field_value(f) for name, f in fields.items()}
+
+
+def get_markdown_from_result(result) -> str:
+    """Extract markdown text from the first content block of an analysis result."""
+    if not result.contents:
+        return ""
+    content = result.contents[0]
+    return getattr(content, "markdown", None) or ""
 
 
 def get_category_from_result(result) -> str:

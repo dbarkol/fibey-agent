@@ -4,7 +4,7 @@ Used to demonstrate the CU 'Classify & Analyze Work Order' mode returning
 near-zero results — this document shares almost no schema overlap with work orders.
 
 Run: uv run python scripts/gen_training_cert_pdf.py
-Output: content_understanding/demo_files/splicing-safety-cert.pdf
+Output: content_understanding/demo_files/safety_cert_splicing.pdf
 """
 
 from pathlib import Path
@@ -20,7 +20,7 @@ from reportlab.platypus import (
 
 OUTPUT_DIR = Path(__file__).parent.parent / "content_understanding" / "demo_files"
 OUTPUT_DIR.mkdir(exist_ok=True)
-OUTPUT_PATH = OUTPUT_DIR / "splicing-safety-cert.pdf"
+OUTPUT_PATH = OUTPUT_DIR / "safety_cert_splicing.pdf"
 
 # ── Color palette (different from WO — warmer, institutional) ─────────────────
 NAVY        = colors.HexColor("#1A3557")

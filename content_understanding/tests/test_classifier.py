@@ -23,20 +23,20 @@ class TestClassification:
         result = analyze_binary(cu_client, CLASSIFIER_ID, WORK_ORDER_PDF)
         category = get_category_from_result(result)
         assert category == "work_order", (
-            f"Expected 'work_order' for fiber-splice-restoration.pdf, got '{category}'"
+            f"Expected 'work_order' for work_order_fiber_splice.pdf, got '{category}'"
         )
 
     def test_scanned_png_classified_as_work_order(self, cu_client):
         result = analyze_binary(cu_client, CLASSIFIER_ID, SCANNED_PNG)
         category = get_category_from_result(result)
         assert category == "work_order", (
-            f"Expected 'work_order' for scanned_work_order.png, got '{category}'"
+            f"Expected 'work_order' for work_order_scanned.png, got '{category}'"
         )
 
     def test_training_cert_classified_as_other(self, cu_client):
         result = analyze_binary(cu_client, CLASSIFIER_ID, TRAINING_CERT_PDF)
         category = get_category_from_result(result)
         assert category == "other", (
-            f"Expected 'other' for splicing-safety-cert.pdf, got '{category}'"
+            f"Expected 'other' for safety_cert_splicing.pdf, got '{category}'"
         )
 

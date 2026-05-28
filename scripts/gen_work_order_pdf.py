@@ -1,7 +1,7 @@
 """
 Temporary script to generate a mock 2-page work order PDF for demo/test data.
 Run: uv run python scripts/gen_work_order_pdf.py
-Output: demo_files/WO-001-fiber-splice-restoration.pdf
+Output: demo_files/work_order_fiber_splice.pdf
 """
 
 from pathlib import Path
@@ -11,13 +11,13 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable, PageBreak
+    HRFlowable, PageBreak, KeepTogether
 )
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
-OUTPUT_DIR = Path(__file__).parent.parent / "demo_files"
+OUTPUT_DIR = Path(__file__).parent.parent / "content_understanding" / "demo_files"
 OUTPUT_DIR.mkdir(exist_ok=True)
-OUTPUT_PATH = OUTPUT_DIR / "WO-618-fiber-splice-restoration.pdf"
+OUTPUT_PATH = OUTPUT_DIR / "work_order_fiber_splice.pdf"
 
 # ── Color palette ──────────────────────────────────────────────────────────────
 BRAND_BLUE   = colors.HexColor("#1B4F9B")
@@ -27,14 +27,13 @@ MID_GRAY     = colors.HexColor("#CCCCCC")
 DARK_GRAY    = colors.HexColor("#444444")
 RED          = colors.HexColor("#C0392B")
 
-# ── Work order data (matches WO-001 from work_orders.json) ────────────────────
+# ── Work order data ────────────────────────────────────────────────────────────
 WO = {
-    "id":                   "WO-618",
-    "title":                "Fiber Splice Restoration — Redmond Business Park",
+    "title":                "Fiber Splice Restoration — Springfield Business Park",
     "status":               "OPEN",
     "priority":             "CRITICAL",
-    "assigned_technician":  "Alex Rivera",
-    "location":             "1200 NE 45th St, Redmond, WA 98052",
+    "assigned_technician":  "J. Martinez",
+    "location":             "742 Evergreen Terrace, Springfield, WA 99999",
     "created_at":           "2026-05-18  08:15 PDT",
     "updated_at":           "2026-05-18  08:15 PDT",
     "due_date":             "2026-05-20  17:00 PDT",
@@ -51,7 +50,9 @@ WO = {
         {"part_id": "FIB-003", "name": "Single-Mode Splice Tray (12-fiber)",  "quantity": 2, "unit": "ea"},
         {"part_id": "FIB-012", "name": "Fiber Splice Enclosure (24-count)",   "quantity": 1, "ea": "ea"},
     ],
-    "site_contact":     "Marcus T. — Building Facilities  |  (425) 555-0183",
+    "site_contact":     "Marcus Tran",
+    "site_contact_phone": "(425) 555-0183",
+    "site_contact_role": "Building Facilities Manager",
     "access_notes":     "Escort required. Check in at security desk (lobby entrance). Hard hat + safety vest mandatory in parking structure.",
     "safety_protocols": [
         "Wear PPE: safety glasses, cut-resistant gloves, and high-vis vest",
@@ -70,7 +71,7 @@ CHECKLIST = [
         "Verify OTDR baseline on affected fibers",
     ]),
     ("On-site",   [
-        "Check in with site contact (Marcus T.)",
+        "Check in with contact (Marcus Tran, Building Facilities)",
         "Photograph damage before any repair",
         "Expose and clean damaged splice point",
         "Perform fusion splices — target IL ≤ 0.10 dB each",
@@ -88,10 +89,8 @@ CHECKLIST = [
 ]
 
 SIGN_FIELDS = [
-    ("Technician Signature", "Alex Rivera",     ""),
-    ("Supervisor Sign-off",  "",                ""),
-    ("Date Completed",       "",                ""),
-    ("NOC Ticket #",         "",                ""),
+    ("Technician Signature", "J. Martinez"),
+    ("Supervisor Sign-off",  ""),
 ]
 
 
@@ -117,32 +116,31 @@ def header_table(wo, styles):
     """Two-row header: blue title bar + metadata row."""
     badge_color = RED if wo["priority"] == "CRITICAL" else BRAND_ORANGE
     badge = Paragraph(wo["priority"], styles["BadgeText"])
-    id_p  = Paragraph(f"<b>{wo['id']}</b>", ParagraphStyle("IDStyle", fontSize=13, textColor=colors.white, fontName="Helvetica-Bold"))
     title = Paragraph(wo["title"], styles["DocTitle"])
     sub   = Paragraph(f"Status: {wo['status']}   •   Due: {wo['due_date']}", styles["DocSubtitle"])
 
-    # Top bar: ID | Title+Sub | Priority badge
+    # Top bar: Title+Sub | Priority badge
     top = Table(
-        [[id_p, [title, sub], badge]],
-        colWidths=[1*inch, 4.8*inch, 1.2*inch],
+        [[[title, sub], badge]],
+        colWidths=[5.8*inch, 1.2*inch],
         rowHeights=[0.75*inch],
     )
     top.setStyle(TableStyle([
         ("BACKGROUND",  (0, 0), (-1, -1), BRAND_BLUE),
         ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN",       (0, 0), (0, 0),   "CENTER"),
-        ("ALIGN",       (2, 0), (2, 0),   "CENTER"),
-        ("BACKGROUND",  (2, 0), (2, 0),   badge_color),
-        ("LEFTPADDING", (1, 0), (1, 0),   8),
+        ("ALIGN",       (1, 0), (1, 0),   "CENTER"),
+        ("BACKGROUND",  (1, 0), (1, 0),   badge_color),
         ("LEFTPADDING", (0, 0), (0, 0),   10),
         ("TOPPADDING",  (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
-    # Metadata row
+    # Metadata row — "Field Technical Contact" is intentionally ambiguous:
+    # could be read as "the technical person on-site (Marcus Tran)" or
+    # "the field technician assigned (Alex Rivera)"
     meta_data = [
-        [Paragraph("<b>Technician</b>", styles["FieldLabel"]),
-         Paragraph(wo["assigned_technician"], styles["FieldValue"]),
+        [Paragraph("<b>Field Technical Contact</b>", styles["FieldLabel"]),
+         Paragraph(wo["site_contact"], styles["FieldValue"]),
          Paragraph("<b>Location</b>", styles["FieldLabel"]),
          Paragraph(wo["location"], styles["FieldValue"]),
          Paragraph("<b>Created</b>", styles["FieldLabel"]),
@@ -216,20 +214,37 @@ def checklist_table(checklist, styles):
 
 
 def sign_table(fields, styles):
-    rows = []
-    for label, default, _ in fields:
+    """Sign-off block with Signature + Print Name + Date columns."""
+    header_row = [
+        Paragraph("<b>Role</b>",        styles["FieldLabel"]),
+        Paragraph("<b>Signature</b>",   styles["FieldLabel"]),
+        Paragraph("<b>Print Name</b>",  styles["FieldLabel"]),
+        Paragraph("<b>Date</b>",        styles["FieldLabel"]),
+    ]
+    rows = [header_row]
+    for label, prefill in fields:
         rows.append([
             Paragraph(f"<b>{label}</b>", styles["FieldLabel"]),
-            Paragraph(default or "_" * 40, styles["FieldValue"]),
+            Paragraph(prefill or "", styles["FieldValue"]),
+            Paragraph(prefill or "", styles["FieldValue"]),
+            Paragraph("", styles["FieldValue"]),
         ])
-    t = Table(rows, colWidths=[1.8*inch, 5.2*inch])
+
+    t = Table(rows,
+              colWidths=[1.5*inch, 2.2*inch, 2.0*inch, 1.3*inch],
+              rowHeights=[0.28*inch] + [0.6*inch] * len(fields))
     t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  BRAND_BLUE),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, -1), 9),
         ("GRID",          (0, 0), (-1, -1), 0.4, MID_GRAY),
-        ("BACKGROUND",    (0, 0), (0, -1),  LIGHT_GRAY),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+        ("BACKGROUND",    (0, 1), (0, -1),  LIGHT_GRAY),
+        ("VALIGN",        (0, 0), (-1, -1), "BOTTOM"),
+        ("TOPPADDING",    (0, 1), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+        ("LINEBELOW",     (1, 1), (3, -1),  0.6, DARK_GRAY),
     ]))
     return t
 
@@ -240,7 +255,7 @@ def add_page_number(canvas, doc):
     canvas.setFillColor(MID_GRAY)
     canvas.drawCentredString(
         LETTER[0] / 2, 0.4 * inch,
-        f"Fibey Field Ops  •  Work Order {WO['id']}  •  Page {doc.page} of 2  •  CONFIDENTIAL"
+        f"Fibey Field Ops  •  Fiber Splice Restoration  •  Page {doc.page} of 2  •  CONFIDENTIAL"
     )
     canvas.restoreState()
 
@@ -254,7 +269,7 @@ def build_pdf():
         rightMargin=0.75*inch,
         topMargin=0.5*inch,
         bottomMargin=0.6*inch,
-        title=f"Work Order {WO['id']}",
+        title="Fiber Splice Restoration — Redmond Business Park",
         author="Fibey Field Ops",
     )
 
@@ -269,7 +284,7 @@ def build_pdf():
 
     # Site access
     story += section("Site Access & Contact", styles)
-    story.append(Paragraph(f"<b>Site Contact:</b>  {WO['site_contact']}", styles["BodyText2"]))
+    story.append(Paragraph(f"<b>Contact:</b>  {WO['site_contact']}  —  {WO['site_contact_role']}  |  {WO['site_contact_phone']}", styles["BodyText2"]))
     story.append(Spacer(1, 4))
     story.append(Paragraph(f"<b>Access Notes:</b>  {WO['access_notes']}", styles["BodyText2"]))
 
@@ -300,9 +315,10 @@ def build_pdf():
     ]))
     story.append(notes_t)
 
-    # Sign-off
-    story += section("Sign-Off", styles)
-    story.append(sign_table(SIGN_FIELDS, styles))
+    # Sign-off pinned to bottom via large spacer + KeepTogether
+    sign_block = section("Sign-Off & Completion", styles) + [sign_table(SIGN_FIELDS, styles)]
+    story.append(Spacer(1, 0.3*inch))
+    story.append(KeepTogether(sign_block))
 
     doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
     print(f"✅ PDF written to: {OUTPUT_PATH}")

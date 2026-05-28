@@ -21,12 +21,12 @@ WO_FIELDS = ["title", "description", "status", "priority",
 
 @pytest.fixture(scope="module")
 def expected_pdf():
-    return json.loads((DEMO_FILES / "fiber-splice-restoration.json").read_text())
+    return json.loads((DEMO_FILES / "work_order_fiber_splice.json").read_text())
 
 
 @pytest.fixture(scope="module")
 def expected_png():
-    return json.loads((DEMO_FILES / "scanned_work_order.json").read_text())
+    return json.loads((DEMO_FILES / "work_order_scanned.json").read_text())
 
 
 class TestWorkOrderPdf:
