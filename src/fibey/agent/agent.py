@@ -528,130 +528,152 @@ async def run_agent(
         pending_args: dict[str, str] = {}
         suppressed_call_ids: set[str] = set()  # call_ids whose events should be hidden
 
-        async for update in stream:
-            update: AgentResponseUpdate
+        try:
+            async for update in stream:
+                update: AgentResponseUpdate
 
-            if update.contents:
-                for content in update.contents:
-                    ctype = content.type
+                if update.contents:
+                    for content in update.contents:
+                        ctype = content.type
 
-                    if ctype == "text":
-                        yield {"type": "delta", "content": content.text or ""}
+                        if ctype == "text":
+                            yield {"type": "delta", "content": content.text or ""}
 
-                    elif ctype in ("mcp_server_tool_call", "function_call"):
-                        tool_name = getattr(content, "tool_name", None) or getattr(content, "name", None) or "tool"
-                        call_id = getattr(content, "call_id", None) or tool_name
-                        call_id_to_name[call_id] = tool_name
-                        # Accumulate arguments across streaming chunks
-                        raw_args = getattr(content, "arguments", None) or ""
-                        if isinstance(raw_args, dict):
-                            raw_args = json.dumps(raw_args)
-                        if call_id not in pending_args:
-                            pending_args[call_id] = raw_args
-                            # Try to detect duplicates early (works when args arrive in one chunk)
-                            skip = False
-                            if tool_name == "load_skill":
-                                try:
-                                    parsed = json.loads(raw_args) if raw_args else {}
-                                    skill_key = parsed.get("skill_name", "")
-                                except Exception:
-                                    skill_key = ""
-                                if skill_key and skill_key in seen_skill_loads:
-                                    skip = True
-                                elif skill_key:
-                                    seen_skill_loads.add(skill_key)
-                            elif raw_args:
-                                try:
-                                    json.loads(raw_args)  # only dedup if args are complete JSON
-                                    tool_args_key = f"{tool_name}::{raw_args}"
-                                    if tool_args_key in seen_tool_args:
+                        elif ctype in ("mcp_server_tool_call", "function_call"):
+                            tool_name = getattr(content, "tool_name", None) or getattr(content, "name", None) or "tool"
+                            call_id = getattr(content, "call_id", None) or tool_name
+                            call_id_to_name[call_id] = tool_name
+                            # Accumulate arguments across streaming chunks
+                            raw_args = getattr(content, "arguments", None) or ""
+                            if isinstance(raw_args, dict):
+                                raw_args = json.dumps(raw_args)
+                            if call_id not in pending_args:
+                                pending_args[call_id] = raw_args
+                                # Try to detect duplicates early (works when args arrive in one chunk)
+                                skip = False
+                                if tool_name == "load_skill":
+                                    try:
+                                        parsed = json.loads(raw_args) if raw_args else {}
+                                        skill_key = parsed.get("skill_name", "")
+                                    except Exception:
+                                        skill_key = ""
+                                    if skill_key and skill_key in seen_skill_loads:
                                         skip = True
+                                    elif skill_key:
+                                        seen_skill_loads.add(skill_key)
+                                elif raw_args:
+                                    try:
+                                        json.loads(raw_args)  # only dedup if args are complete JSON
+                                        tool_args_key = f"{tool_name}::{raw_args}"
+                                        if tool_args_key in seen_tool_args:
+                                            skip = True
+                                            suppressed_call_ids.add(call_id)
+                                    except (ValueError, TypeError):
+                                        pass  # incomplete args, can't dedup yet
+                                if not skip:
+                                    # Emit an early "running" activity so the UI shows a spinner
+                                    yield {
+                                        "type": "activity",
+                                        "tool": tool_name,
+                                        "call_id": call_id,
+                                        "status": "running",
+                                        "detail": f"Calling {tool_name}...",
+                                    }
+                            else:
+                                pending_args[call_id] += raw_args
+
+                        elif ctype in ("mcp_server_tool_result", "function_result"):
+                            call_id = getattr(content, "call_id", None) or ""
+                            tool_name = call_id_to_name.get(call_id) or getattr(content, "tool_name", None) or getattr(content, "name", None) or "tool"
+
+                            # Emit the "running" activity with full accumulated args
+                            if call_id not in seen_calls:
+                                seen_calls.add(call_id)
+                                args_str = pending_args.get(call_id, "")
+
+                                # Suppress duplicate load_skill for same skill name
+                                if tool_name == "load_skill":
+                                    try:
+                                        parsed = json.loads(args_str) if args_str else {}
+                                        skill_name = parsed.get("skill_name", "")
+                                    except Exception:
+                                        skill_name = ""
+                                    if skill_name and skill_name in seen_skill_loads:
+                                        seen_results.add(call_id)
                                         suppressed_call_ids.add(call_id)
-                                except (ValueError, TypeError):
-                                    pass  # incomplete args, can't dedup yet
-                            if not skip:
-                                # Emit an early "running" activity so the UI shows a spinner
+                                        continue
+                                    if skill_name:
+                                        seen_skill_loads.add(skill_name)
+                                        detail = f"Loading skill: {skill_name}"
+                                    else:
+                                        detail = f"Calling {tool_name}..."
+                                else:
+                                    # Suppress duplicate tool calls with identical name+args
+                                    tool_args_key = f"{tool_name}::{args_str}"
+                                    if tool_args_key in seen_tool_args:
+                                        seen_results.add(call_id)
+                                        suppressed_call_ids.add(call_id)
+                                        continue
+                                    seen_tool_args.add(tool_args_key)
+
+                                    detail = f"Calling {tool_name}..."
+                                    try:
+                                        parsed = json.loads(args_str) if args_str else {}
+                                        if isinstance(parsed, dict):
+                                            for key in ("work_order_id", "part_id", "query"):
+                                                val = parsed.get(key)
+                                                if val:
+                                                    detail = f"Calling {tool_name} ({key}={val})"
+                                                    break
+                                    except Exception:
+                                        pass
                                 yield {
                                     "type": "activity",
                                     "tool": tool_name,
                                     "call_id": call_id,
                                     "status": "running",
-                                    "detail": f"Calling {tool_name}...",
+                                    "detail": detail,
+                                    "args": args_str,
                                 }
+
+                            # Emit the "complete" activity
+                            if call_id not in seen_results:
+                                seen_results.add(call_id)
+                                yield {
+                                    "type": "activity",
+                                    "tool": tool_name,
+                                    "call_id": call_id,
+                                    "status": "complete",
+                                    "detail": f"Completed {tool_name}",
+                                }
+
                         else:
-                            pending_args[call_id] += raw_args
-
-                    elif ctype in ("mcp_server_tool_result", "function_result"):
-                        call_id = getattr(content, "call_id", None) or ""
-                        tool_name = call_id_to_name.get(call_id) or getattr(content, "tool_name", None) or getattr(content, "name", None) or "tool"
-
-                        # Emit the "running" activity with full accumulated args
-                        if call_id not in seen_calls:
-                            seen_calls.add(call_id)
-                            args_str = pending_args.get(call_id, "")
-
-                            # Suppress duplicate load_skill for same skill name
-                            if tool_name == "load_skill":
-                                try:
-                                    parsed = json.loads(args_str) if args_str else {}
-                                    skill_name = parsed.get("skill_name", "")
-                                except Exception:
-                                    skill_name = ""
-                                if skill_name and skill_name in seen_skill_loads:
-                                    seen_results.add(call_id)
-                                    suppressed_call_ids.add(call_id)
-                                    continue
-                                if skill_name:
-                                    seen_skill_loads.add(skill_name)
-                                    detail = f"Loading skill: {skill_name}"
-                                else:
-                                    detail = f"Calling {tool_name}..."
-                            else:
-                                # Suppress duplicate tool calls with identical name+args
-                                tool_args_key = f"{tool_name}::{args_str}"
-                                if tool_args_key in seen_tool_args:
-                                    seen_results.add(call_id)
-                                    suppressed_call_ids.add(call_id)
-                                    continue
-                                seen_tool_args.add(tool_args_key)
-
-                                detail = f"Calling {tool_name}..."
-                                try:
-                                    parsed = json.loads(args_str) if args_str else {}
-                                    if isinstance(parsed, dict):
-                                        for key in ("work_order_id", "part_id", "query"):
-                                            val = parsed.get(key)
-                                            if val:
-                                                detail = f"Calling {tool_name} ({key}={val})"
-                                                break
-                                except Exception:
-                                    pass
-                            yield {
-                                "type": "activity",
-                                "tool": tool_name,
-                                "call_id": call_id,
-                                "status": "running",
-                                "detail": detail,
-                                "args": args_str,
-                            }
-
-                        # Emit the "complete" activity
-                        if call_id not in seen_results:
-                            seen_results.add(call_id)
-                            yield {
-                                "type": "activity",
-                                "tool": tool_name,
-                                "call_id": call_id,
-                                "status": "complete",
-                                "detail": f"Completed {tool_name}",
-                            }
-
-                    else:
-                        # Log unknown content types for debugging
-                        import logging
-                        logging.getLogger(__name__).debug(
-                            "Unknown content type: %s attrs=%s",
-                            ctype,
-                            {k: str(v)[:100] for k, v in vars(content).items()} if hasattr(content, '__dict__') else str(content)[:200]
-                        )
+                            # Log unknown content types for debugging
+                            import logging
+                            logging.getLogger(__name__).debug(
+                                "Unknown content type: %s attrs=%s",
+                                ctype,
+                                {k: str(v)[:100] for k, v in vars(content).items()} if hasattr(content, '__dict__') else str(content)[:200]
+                            )
+        except Exception as e:
+            # Catch OpenAI / agent framework errors and yield a clean readable message.
+            # This is especially important for None mode + unsupported file types:
+            # OpenAI returns 400 "missing required parameter" when Content.from_data
+            # receives a media type it cannot process (e.g. docx).
+            err_str = str(e)
+            # Extract just the human-readable OpenAI message if present
+            import re as _re
+            match = _re.search(r"'message':\s*['\"](.+?)['\"]", err_str)
+            if match:
+                clean = match.group(1)
+                yield {
+                    "type": "delta",
+                    "content": (
+                        f"❌ **OpenAI rejected the request:** {clean}\n\n"
+                        f"This confirms OpenAI cannot process this file type directly. "
+                        f"Switch to **Basic CU** or **Classify & Analyze Work Order** to analyze the document with Content Understanding."
+                    ),
+                }
+            else:
+                yield {"type": "delta", "content": f"❌ Agent error: {err_str}"}
 
