@@ -167,7 +167,6 @@ def create_analyzer(client: ContentUnderstandingClient) -> None:
                     "matching the WorkOrderCreate API schema."
                 ),
                 config=ContentAnalyzerConfig(
-                    return_details=False,
                     enable_layout=True,
                     enable_ocr=True,
                 ),
