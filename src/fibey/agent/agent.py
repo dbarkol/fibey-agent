@@ -434,6 +434,34 @@ async def run_agent(
     - {"type": "activity", "tool": "...", "status": "...", "detail": "..."}
     - {"type": "citation", "source": "...", "url": "..."}
     """
+    # OpenAI natively supports only images and PDF (via vision).
+    # All other types (docx, xlsx, etc.) are silently ignored, which is confusing.
+    # In None mode: detect unsupported types early and surface a clear error.
+    _OPENAI_SUPPORTED_TYPES = {
+        "image/jpeg", "image/png", "image/gif", "image/webp",
+        "application/pdf",
+    }
+    if cu_mode == "none" and attachments:
+        unsupported = [
+            att.get("name", "file")
+            for att in attachments
+            if att.get("type", "") not in _OPENAI_SUPPORTED_TYPES
+        ]
+        if unsupported:
+            names = ", ".join(f"`{n}`" for n in unsupported)
+            ext = unsupported[0].rsplit(".", 1)[-1].upper() if "." in unsupported[0] else "this file type"
+            yield {
+                "type": "delta",
+                "content": (
+                    f"⚠️ **OpenAI cannot process {names}.**\n\n"
+                    f"OpenAI's vision API only supports images (JPEG, PNG, GIF, WebP) and PDF. "
+                    f"**.{ext} files are not supported** without Content Understanding.\n\n"
+                    f"To analyze this file, select **Basic CU** or **Classify & Analyze Work Order** "
+                    f"from the CU Context Provider panel on the right."
+                ),
+            }
+            return
+
     agent, tools = create_agent(cu_mode=cu_mode)
 
     agent_session = session.get("agent_session")
