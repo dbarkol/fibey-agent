@@ -60,6 +60,7 @@ async def _run_agent_stream(message: str, session_id: str) -> AsyncGenerator[str
                     "detail": event.get("detail", ""),
                     "args": event.get("args", ""),
                     "result": event.get("result", ""),
+                    "results": event.get("results", []),
                 })
             
             elif event_type == "citation":

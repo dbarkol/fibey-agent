@@ -16,12 +16,30 @@ all required parts are available before heading to the job site.
 - "Prepare for WO-010"
 - "Are the parts available for WO-007?"
 
+## Tools Used by This Skill
+
+This skill uses **two** capabilities from the Foundry Toolbox:
+
+| Capability | Prefixed tool name |
+|---|---|
+| Get the work order | `work_orders___get_work_order_work_orders__work_order_id__get` |
+| Check stock for the parts list | `inventory___check_stock_batch` |
+
+### Step 0: Discover tools (REQUIRED before first call this turn)
+
+If either tool isn't already visible in your tool list, run **one** combined `tool_search` with **`limit: 10`**:
+
+```
+tool_search({"query": "work order parts stock inventory", "limit": 10})
+```
+
+**Never** run two separate searches — one combined query with `limit: 10` returns all needed tools, and they stay callable for the rest of the turn.
+
 ## Step-by-Step Instructions
 
 ### Step 1: Fetch the Work Order
 
-Use the work orders API to get the full work order details:
-`GET /work-orders/{id}`
+Call `work_orders___get_work_order_work_orders__work_order_id__get` via `call_tool` with `{"work_order_id": "WO-XXX"}`.
 
 Extract the `parts_needed` list — each entry has a `part_id` and `quantity`.
 
@@ -30,7 +48,7 @@ are listed for this WO.
 
 ### Step 2: Check Stock for All Parts
 
-Use `check_stock_batch` with all `part_id` values from `parts_needed` in a single call.
+Call `inventory___check_stock_batch` via `call_tool` with `{"part_ids": [<all part_ids>]}` in a single call.
 This returns stock status for every part at once — do NOT call `check_stock` individually.
 
 Compare the required quantity against the available stock for each part.

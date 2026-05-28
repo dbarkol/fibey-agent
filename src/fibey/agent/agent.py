@@ -249,13 +249,13 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
         )
 
         # Track tool calls to deduplicate streaming repeats and map results back
-        seen_calls: set[str] = set()
-        seen_results: set[str] = set()
-        seen_skill_loads: set[str] = set()  # dedupe repeated load_skill for same skill
-        seen_tool_args: set[str] = set()    # dedupe repeated tool calls with same args
+        seen_skill_loads: set[str] = set()        # dedupe repeated load_skill for same skill
+        args_key_owner: dict[str, str] = {}       # name+args key → first call_id; later identical calls are suppressed
         call_id_to_name: dict[str, str] = {}
         pending_args: dict[str, str] = {}
-        suppressed_call_ids: set[str] = set()  # call_ids whose events should be hidden
+        suppressed_call_ids: set[str] = set()     # call_ids whose events should be hidden
+        emitted_running: set[str] = set()         # call_ids that already got a running event
+        emitted_complete: set[str] = set()        # call_ids that already got a complete event
 
         async for update in stream:
             update: AgentResponseUpdate
@@ -278,7 +278,31 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                             raw_args = _json.dumps(raw_args)
                         if call_id not in pending_args:
                             pending_args[call_id] = raw_args
-                            # Try to detect duplicates early (works when args arrive in one chunk)
+                            # Unwrap Foundry Toolbox tool-search-mode `call_tool` so
+                            # the activity surfaces the *real* underlying tool rather
+                            # than the meta-tool wrapper.
+                            unwrapped_via_tool_search = False
+                            if tool_name == "call_tool":
+                                try:
+                                    parsed = _json.loads(raw_args) if raw_args else {}
+                                except Exception:
+                                    parsed = {}
+                                inner_name = parsed.get("name") if isinstance(parsed, dict) else None
+                                if inner_name:
+                                    tool_name = inner_name
+                                    call_id_to_name[call_id] = inner_name
+                                    inner_args = parsed.get("arguments", {}) or {}
+                                    if isinstance(inner_args, (dict, list)):
+                                        inner_args_str = _json.dumps(inner_args)
+                                    else:
+                                        inner_args_str = str(inner_args)
+                                    pending_args[call_id] = inner_args_str
+                                    raw_args = inner_args_str
+                                    unwrapped_via_tool_search = True
+                            # Detect duplicates early when args arrive in a single chunk.
+                            # `args_key_owner` stores the FIRST call_id to register a given
+                            # name+args key; subsequent calls with the same key are
+                            # suppressed so the activity sidebar doesn't show duplicates.
                             skip = False
                             if tool_name == "load_skill":
                                 try:
@@ -288,76 +312,168 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                                     skill_key = ""
                                 if skill_key and skill_key in seen_skill_loads:
                                     skip = True
+                                    suppressed_call_ids.add(call_id)
                                 elif skill_key:
                                     seen_skill_loads.add(skill_key)
                             elif raw_args:
                                 try:
                                     _json.loads(raw_args)  # only dedup if args are complete JSON
                                     tool_args_key = f"{tool_name}::{raw_args}"
-                                    if tool_args_key in seen_tool_args:
+                                    owner = args_key_owner.get(tool_args_key)
+                                    if owner is None:
+                                        args_key_owner[tool_args_key] = call_id
+                                    elif owner != call_id:
                                         skip = True
                                         suppressed_call_ids.add(call_id)
                                 except (ValueError, TypeError):
                                     pass  # incomplete args, can't dedup yet
                             if not skip:
-                                # Emit an early "running" activity so the UI shows a spinner
-                                yield {
-                                    "type": "activity",
-                                    "tool": tool_name,
-                                    "call_id": call_id,
-                                    "status": "running",
-                                    "detail": f"Calling {tool_name}...",
-                                }
+                                # If this is still the meta wrapper `call_tool` (because
+                                # args weren't complete enough to unwrap), don't emit a
+                                # placeholder yet — the safety-net unwrap at result time
+                                # will emit the real tool's running event.
+                                if tool_name == "call_tool" and not unwrapped_via_tool_search:
+                                    pass
+                                else:
+                                    early_event = {
+                                        "type": "activity",
+                                        "tool": tool_name,
+                                        "call_id": call_id,
+                                        "status": "running",
+                                        "detail": f"Calling {tool_name}...",
+                                    }
+                                    yield early_event
+                                    emitted_running.add(call_id)
                         else:
                             pending_args[call_id] += raw_args
 
                     elif ctype in ("mcp_server_tool_result", "function_result"):
                         call_id = getattr(content, "call_id", None) or ""
                         tool_name = call_id_to_name.get(call_id) or getattr(content, "tool_name", None) or getattr(content, "name", None) or "tool"
+                        import json as _json
 
-                        # Emit the "running" activity with full accumulated args
-                        if call_id not in seen_calls:
-                            seen_calls.add(call_id)
-                            args_str = pending_args.get(call_id, "")
-                            import json as _json
-
-                            # Suppress duplicate load_skill for same skill name
-                            if tool_name == "load_skill":
-                                try:
-                                    parsed = _json.loads(args_str) if args_str else {}
-                                    skill_name = parsed.get("skill_name", "")
-                                except Exception:
-                                    skill_name = ""
-                                if skill_name and skill_name in seen_skill_loads:
-                                    seen_results.add(call_id)
-                                    suppressed_call_ids.add(call_id)
-                                    continue
-                                if skill_name:
-                                    seen_skill_loads.add(skill_name)
-                                    detail = f"Loading skill: {skill_name}"
+                        # Log tool results so we can diagnose error/retry paths and
+                        # verify the model is actually seeing what the toolbox returns.
+                        try:
+                            result_obj = getattr(content, "result", None)
+                            result_repr = ""
+                            is_error = False
+                            if result_obj is not None:
+                                if isinstance(result_obj, (dict, list)):
+                                    result_repr = _json.dumps(result_obj)[:500]
+                                    if isinstance(result_obj, dict):
+                                        is_error = bool(result_obj.get("isError")) or "error" in result_obj
                                 else:
-                                    detail = f"Calling {tool_name}..."
-                            else:
-                                # Suppress duplicate tool calls with identical name+args
-                                tool_args_key = f"{tool_name}::{args_str}"
-                                if tool_args_key in seen_tool_args:
-                                    seen_results.add(call_id)
-                                    suppressed_call_ids.add(call_id)
-                                    continue
-                                seen_tool_args.add(tool_args_key)
+                                    result_repr = str(result_obj)[:500]
+                                    is_error = "error" in result_repr.lower()[:200]
+                            logger.info(
+                                "TOOL_RESULT call_id=%s tool=%s is_error=%s preview=%s",
+                                call_id, tool_name, is_error, result_repr.replace("\n", " ")[:400],
+                            )
+                        except Exception as log_exc:
+                            logger.debug("tool-result logging failed: %s", log_exc)
 
-                                detail = f"Calling {tool_name}..."
-                                try:
-                                    parsed = _json.loads(args_str) if args_str else {}
-                                    if isinstance(parsed, dict):
-                                        for key in ("work_order_id", "part_id", "query"):
-                                            val = parsed.get(key)
-                                            if val:
-                                                detail = f"Calling {tool_name} ({key}={val})"
-                                                break
-                                except Exception:
-                                    pass
-                            yield {
+                        # Safety net: if early-chunk unwrap of `call_tool` failed
+                        # (args were chunked), retry now that pending_args is complete.
+                        extra_meta: dict[str, Any] = {}
+                        if tool_name == "call_tool":
+                            try:
+                                parsed_wrapper = _json.loads(pending_args.get(call_id, "") or "{}")
+                            except Exception:
+                                parsed_wrapper = {}
+                            inner_name = parsed_wrapper.get("name") if isinstance(parsed_wrapper, dict) else None
+                            if inner_name:
+                                tool_name = inner_name
+                                call_id_to_name[call_id] = inner_name
+                                inner_args = parsed_wrapper.get("arguments", {}) or {}
+                                inner_args_str = (
+                                    _json.dumps(inner_args)
+                                    if isinstance(inner_args, (dict, list))
+                                    else str(inner_args)
+                                )
+                                pending_args[call_id] = inner_args_str
+
+                        # For tool_search, parse the returned tool list and attach
+                        # it to the complete event so the UI can render which tools
+                        # were discovered (and later mark which ones were used).
+                        if tool_name == "tool_search":
+                            try:
+                                raw_text = result_obj if isinstance(result_obj, str) else None
+                                if raw_text is None and isinstance(result_obj, dict):
+                                    content_list = result_obj.get("content") or []
+                                    if content_list and isinstance(content_list, list):
+                                        first = content_list[0]
+                                        if isinstance(first, dict):
+                                            raw_text = first.get("text")
+                                if raw_text is None and result_obj is not None:
+                                    raw_text = str(result_obj)
+                                parsed_result = _json.loads(raw_text) if raw_text else {}
+                                tools_list = parsed_result.get("tools") if isinstance(parsed_result, dict) else None
+                                if isinstance(tools_list, list):
+                                    extra_meta["results"] = [
+                                        {
+                                            "name": t.get("name", ""),
+                                            "description": (t.get("description") or "").strip().split("\n")[0][:200],
+                                        }
+                                        for t in tools_list
+                                        if isinstance(t, dict) and t.get("name")
+                                    ]
+                            except Exception as parse_exc:
+                                logger.debug("tool_search result parse failed: %s", parse_exc)
+
+                        # If this call was suppressed at early-chunk time
+                        # (e.g., duplicate name+args), skip emitting running/complete too.
+                        if call_id in suppressed_call_ids:
+                            emitted_running.add(call_id)
+                            emitted_complete.add(call_id)
+                            continue
+
+                        args_str = pending_args.get(call_id, "")
+
+                        # Late dedup: if args were chunked, we couldn't detect duplicates
+                        # at early-emit time. Re-check ownership with the full args now.
+                        if tool_name == "load_skill":
+                            try:
+                                parsed = _json.loads(args_str) if args_str else {}
+                                skill_name = parsed.get("skill_name", "")
+                            except Exception:
+                                skill_name = ""
+                            if skill_name and skill_name in seen_skill_loads and call_id not in emitted_running:
+                                # The skill was loaded before this call_id got an early emit.
+                                suppressed_call_ids.add(call_id)
+                                emitted_running.add(call_id)
+                                emitted_complete.add(call_id)
+                                continue
+                            if skill_name and skill_name not in seen_skill_loads:
+                                seen_skill_loads.add(skill_name)
+                            detail = f"Loading skill: {skill_name}" if skill_name else f"Calling {tool_name}..."
+                        else:
+                            tool_args_key = f"{tool_name}::{args_str}"
+                            owner = args_key_owner.get(tool_args_key)
+                            if owner is None:
+                                args_key_owner[tool_args_key] = call_id
+                            elif owner != call_id and call_id not in emitted_running:
+                                # An identical call already won the race; suppress this one.
+                                suppressed_call_ids.add(call_id)
+                                emitted_running.add(call_id)
+                                emitted_complete.add(call_id)
+                                continue
+
+                            detail = f"Calling {tool_name}..."
+                            try:
+                                parsed = _json.loads(args_str) if args_str else {}
+                                if isinstance(parsed, dict):
+                                    for key in ("work_order_id", "part_id", "query"):
+                                        val = parsed.get(key)
+                                        if val:
+                                            detail = f"Calling {tool_name} ({key}={val})"
+                                            break
+                            except Exception:
+                                pass
+
+                        # Emit "running" with full args if we haven't already.
+                        if call_id not in emitted_running:
+                            running_event = {
                                 "type": "activity",
                                 "tool": tool_name,
                                 "call_id": call_id,
@@ -365,17 +481,37 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
                                 "detail": detail,
                                 "args": args_str,
                             }
+                            running_event.update(extra_meta)
+                            yield running_event
+                            emitted_running.add(call_id)
+                        else:
+                            # We already emitted a "running" event (from the early chunk).
+                            # Re-emit a running with the full args so the UI's args display
+                            # gets updated to the complete value before complete fires.
+                            update_event = {
+                                "type": "activity",
+                                "tool": tool_name,
+                                "call_id": call_id,
+                                "status": "running",
+                                "detail": detail,
+                                "args": args_str,
+                            }
+                            update_event.update(extra_meta)
+                            yield update_event
 
-                        # Emit the "complete" activity
-                        if call_id not in seen_results:
-                            seen_results.add(call_id)
-                            yield {
+                        # Emit the "complete" activity.
+                        if call_id not in emitted_complete:
+                            complete_event = {
                                 "type": "activity",
                                 "tool": tool_name,
                                 "call_id": call_id,
                                 "status": "complete",
                                 "detail": f"Completed {tool_name}",
+                                "args": args_str,
                             }
+                            complete_event.update(extra_meta)
+                            yield complete_event
+                            emitted_complete.add(call_id)
 
                     else:
                         # Log unknown content types for debugging

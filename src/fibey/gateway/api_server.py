@@ -64,6 +64,7 @@ async def _run_local(message: str, session_id: str) -> AsyncGenerator[str, None]
                     "detail": event.get("detail", ""),
                     "args": event.get("args", ""),
                     "result": event.get("result", ""),
+                    "results": event.get("results", []),
                 })
             elif event["type"] == "citation":
                 yield _sse("citation", {

@@ -62,6 +62,14 @@ export function useChat() {
           timestamp: Date.now(),
         };
 
+        // Debug logging
+        console.log('[useChat] Activity event received:', {
+          tool: event.tool,
+          call_id: event.call_id,
+          status: event.status,
+          detail: event.detail?.substring(0, 50),
+        });
+
         setActivities((prev) => {
           const updated = [...prev];
 
@@ -73,11 +81,22 @@ export function useChat() {
             ? updated.findIndex((a) => a.call_id === event.call_id)
             : -1;
           
+          console.log('[useChat] Lookup by call_id:', {
+            call_id: event.call_id,
+            existing_index: existing,
+            existing_activity: existing >= 0 ? { tool: updated[existing]?.tool, status: updated[existing]?.status, call_id: updated[existing]?.call_id } : null,
+            all_activities_call_ids: updated.map(a => ({ tool: a.tool?.substring(0, 30), call_id: a.call_id }))
+          });
+          
           // If not found by call_id, try by tool name (but only update non-complete activities)
           if (existing < 0) {
             existing = updated.findIndex(
               (a) => (a.call_id || a.tool) === matchKey && a.status !== "complete"
             );
+            console.log('[useChat] Lookup by tool (non-complete):', {
+              matchKey,
+              existing_index: existing,
+            });
           }
           
           if (existing >= 0) {
@@ -87,16 +106,21 @@ export function useChat() {
               ...activity,
               args: activity.args || updated[existing]?.args,
               result: activity.result || updated[existing]?.result,
+              results: activity.results ?? updated[existing]?.results,
             };
+            console.log('[useChat] Updated existing activity at index', existing);
             return updated;
           }
           
           // Only create new activity if it's a fresh "running" event (not a late arrival)
           if (activity.status === "running") {
+            console.log('[useChat] Creating new activity for', event.tool, 'with call_id:', event.call_id);
+            console.log('[useChat] New activity object:', { id: activity.id, tool: activity.tool, call_id: activity.call_id, status: activity.status });
             return [...updated, activity];
           }
           
           // Ignore late "complete" events for activities we don't have
+          console.log('[useChat] Ignoring late event for', event.tool, event.status);
           return updated;
         });
       },

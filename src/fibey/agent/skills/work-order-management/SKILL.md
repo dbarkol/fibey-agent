@@ -16,18 +16,38 @@ Use this skill for any work order operation — viewing, listing, creating, or u
 - "What critical work orders are pending?"
 - "Assign WO-010 to Sarah"
 
-## Step-by-Step Instructions
+## Tools Used by This Skill
+
+All work order capabilities live in the Foundry Toolbox under the `work_orders` MCP server, so the actual tool names are prefixed `work_orders___`.
+
+| Capability | Prefixed tool name |
+|---|---|
+| List / filter work orders | `work_orders___list_work_orders_work_orders_get` |
+| Get a specific work order | `work_orders___get_work_order_work_orders__work_order_id__get` |
+| Create a work order | `work_orders___create_work_order_work_orders_post` |
+| Update a work order | `work_orders___update_work_order_work_orders__work_order_id__patch` |
+
+### Step 0: Discover tools (REQUIRED before first work-order call this turn)
+
+If the work-order tools aren't already visible in your tool list, call `tool_search` **once** with **`limit: 10`** and a short query like `"work order"`. Examples:
+
+- `tool_search({"query": "work order", "limit": 10})`
+- `tool_search({"query": "create work order", "limit": 10})` for create flows
+
+The returned tools stay callable for the rest of the turn — do not search again.
 
 ### Step 1: Choose the Right Operation
 
-| Request Type | API Operation | Key Parameters |
+| Request Type | Tool (prefixed name) | Key Parameters |
 |-------------|--------------|----------------|
-| View a specific WO | `GET /work-orders/{id}` | work order ID (WO-XXX) |
-| List / filter WOs | `GET /work-orders` | `status`, `priority`, `assigned_technician` |
-| Create a new WO | `POST /work-orders` | title, description, priority, technician, location, due_date |
-| Update an existing WO | `PATCH /work-orders/{id}` | fields to change |
+| View a specific WO | `work_orders___get_work_order_*` | `work_order_id` (e.g. `WO-007`) |
+| List / filter WOs | `work_orders___list_work_orders_*` | `status`, `priority`, `assigned_technician` |
+| Create a new WO | `work_orders___create_work_order_*` | title, description, priority, technician, location, due_date |
+| Update an existing WO | `work_orders___update_work_order_*` | `work_order_id` + fields to change |
 
-**Always use filters when listing.** If the technician asks "what are my open work orders?", 
+Invoke each tool via `call_tool` with `{"name": "<prefixed_name>", "arguments": {...}}`.
+
+**Always use filters when listing.** If the technician asks "what are my open work orders?",
 filter by `status=open` rather than listing all and filtering yourself.
 
 ### Step 2: Format the Response

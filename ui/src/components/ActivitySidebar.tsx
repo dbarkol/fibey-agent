@@ -16,6 +16,15 @@ function parseToolInfo(raw: string): { name: string; icon: string; category: str
     return { name: "Load Skill", icon: "psychology", category: "skill", source: "Agent Framework" };
   }
 
+  // Foundry Toolbox tool-search meta-tools
+  if (lower === "tool_search") {
+    return { name: "Tool Search", icon: "travel_explore", category: "discovery", source: "Foundry Toolbox" };
+  }
+  if (lower === "call_tool") {
+    // Fallback when gateway did not unwrap (incomplete args at result time).
+    return { name: "Call Tool", icon: "play_arrow", category: "discovery", source: "Foundry Toolbox" };
+  }
+
   // Knowledge base
   if (lower === "knowledge_base" || lower.includes("knowledge_base")) {
     return { name: "Knowledge Base", icon: "menu_book", category: "knowledge", source: "FoundryIQ" };
@@ -66,6 +75,8 @@ function categoryColor(category: string): string {
       return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300";
     case "inventory":
       return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300";
+    case "discovery":
+      return "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300";
     default:
       return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
   }
@@ -95,8 +106,30 @@ function parseArgs(raw: string | undefined, toolName: string): Array<[string, st
     const parsed = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return null;
 
-    // For knowledge base, the raw args may be huge — just show we queried it
     const lower = toolName.toLowerCase();
+
+    // tool_search: just show the natural-language query
+    if (lower === "tool_search") {
+      const out: Array<[string, string]> = [];
+      if (parsed.query) out.push(["query", String(parsed.query).slice(0, 120)]);
+      return out.length > 0 ? out : null;
+    }
+
+    // call_tool fallback (gateway normally unwraps): show the wrapped target + args
+    if (lower === "call_tool") {
+      const out: Array<[string, string]> = [];
+      if (parsed.name) out.push(["target", String(parsed.name)]);
+      if (parsed.arguments && typeof parsed.arguments === "object") {
+        for (const [k, v] of Object.entries(parsed.arguments)) {
+          if (v === null || v === undefined) continue;
+          const val = typeof v === "object" ? JSON.stringify(v) : String(v);
+          out.push([k, val.length > 80 ? val.slice(0, 80) + "…" : val]);
+        }
+      }
+      return out.length > 0 ? out : null;
+    }
+
+    // For knowledge base, the raw args may be huge — just show we queried it
     if (lower.includes("knowledge_base")) {
       const query = parsed.query || parsed.search || parsed.question;
       if (query) return [["query", String(query).slice(0, 80)]];
@@ -106,7 +139,7 @@ function parseArgs(raw: string | undefined, toolName: string): Array<[string, st
     const entries = Object.entries(parsed)
       .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
       .map(([k, v]) => {
-        const val = String(v);
+        const val = typeof v === "object" ? JSON.stringify(v) : String(v);
         return [k, val.length > 80 ? val.slice(0, 80) + "…" : val] as [string, string];
       });
     return entries.length > 0 ? entries : null;
@@ -117,15 +150,23 @@ function parseArgs(raw: string | undefined, toolName: string): Array<[string, st
 
 /** Create a short, readable version of the raw MCP tool name */
 function shortenToolName(raw: string): string {
-  let name = raw;
-  // Strip MCP prefix (e.g. "work_orders___" or "inventory___")
-  name = name.replace(/^[a-z_]+___/, "");
-  // Strip trailing path param patterns like "_work_orders__work_order_id__get"
-  name = name.replace(/_[a-z_]+__[a-z_]+__(get|put|post|patch|delete)$/i, "");
-  // If still long, try simpler trailing cleanup
-  if (name.length > 25) {
-    name = name.replace(/__.*$/, "");
+  // Strip MCP server prefix (e.g. "work_orders___" or "inventory___")
+  const name = raw.replace(/^[a-z_]+___/, "");
+  // FastAPI-style tools repeat the resource name: e.g.
+  // "get_work_order_work_orders__work_order_id__get" — the second occurrence of
+  // a word marks the start of the auto-generated route/method suffix, so truncate
+  // before it to keep just "<verb>_<resource>".
+  const parts = name.split("_").filter(Boolean);
+  for (let i = 1; i < parts.length; i++) {
+    for (let j = 0; j < i; j++) {
+      if (parts[i] === parts[j]) {
+        return parts.slice(0, i).join("_");
+      }
+    }
   }
+  // Otherwise strip a trailing HTTP verb if present
+  const verbMatch = name.match(/^(.*?)_(get|put|post|patch|delete)$/i);
+  if (verbMatch && verbMatch[1]) return verbMatch[1];
   return name;
 }
 
@@ -250,7 +291,21 @@ export default function ActivitySidebar({ activities, isStreaming, onClear }: Ac
             {/* Timeline line */}
             <div className="absolute left-[15px] top-2 bottom-2 w-px bg-gray-200 dark:bg-gray-700" />
 
-            {activities.map((activity) => {
+            {(() => {
+              // Build set of tool names that were actually invoked in this turn so
+              // we can mark tool_search results that the model chose to use.
+              const invokedToolNames = new Set(
+                activities
+                  .map((a) => a.tool)
+                  .filter(
+                    (t) =>
+                      t &&
+                      t !== "tool_search" &&
+                      t !== "call_tool" &&
+                      t !== "load_skill",
+                  ),
+              );
+              return activities.map((activity) => {
               const tool = parseToolInfo(activity.tool);
               const status = statusMeta(activity.status);
               const isExpanded = expandedIds.has(activity.id);
@@ -276,11 +331,22 @@ export default function ActivitySidebar({ activities, isStreaming, onClear }: Ac
 
                     {/* Content */}
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${categoryColor(tool.category)}`}>
                           <span className="material-icons-outlined text-[13px]">{tool.icon}</span>
                           {tool.name}
                         </span>
+                        {activity.tool === "tool_search" && activity.results && activity.results.length > 0 && (() => {
+                          const usedCount = activity.results.filter((r) => invokedToolNames.has(r.name)).length;
+                          return (
+                            <span
+                              className="inline-flex items-center gap-0.5 rounded bg-indigo-50 px-1 py-0.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300"
+                              title={`${usedCount} of ${activity.results.length} returned tools were used`}
+                            >
+                              {usedCount > 0 ? `${usedCount} selected` : `${activity.results.length} found`}
+                            </span>
+                          );
+                        })()}
                         <span className="material-icons-outlined ml-auto text-[14px] text-gray-400 dark:text-gray-600">
                           {isExpanded ? "expand_less" : "expand_more"}
                         </span>
@@ -330,6 +396,42 @@ export default function ActivitySidebar({ activities, isStreaming, onClear }: Ac
                               ))}
                             </div>
                           )}
+                          {/* tool_search results — only show ones the model actually used */}
+                          {activity.tool === "tool_search" && activity.results && activity.results.length > 0 && (() => {
+                            const usedResults = activity.results.filter((r) => invokedToolNames.has(r.name));
+                            const totalCount = activity.results.length;
+                            return (
+                              <div className="space-y-1 border-t border-gray-100 pt-1.5 dark:border-gray-700">
+                                <div className="text-[10px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                                  {usedResults.length > 0
+                                    ? `Selected (${usedResults.length} of ${totalCount})`
+                                    : `Returned ${totalCount}, none used yet`}
+                                </div>
+                                <div className="space-y-1">
+                                  {usedResults.map((r) => (
+                                    <div
+                                      key={r.name}
+                                      className="rounded border border-green-200 bg-green-50 px-2 py-1 dark:border-green-700/50 dark:bg-green-900/20"
+                                    >
+                                      <div className="flex items-baseline gap-1.5">
+                                        <span className="material-icons-outlined text-[11px] text-green-600 dark:text-green-400">
+                                          check_circle
+                                        </span>
+                                        <span className="font-mono text-[10px] font-semibold break-all text-gray-800 dark:text-gray-100">
+                                          {shortenToolName(r.name)}
+                                        </span>
+                                      </div>
+                                      {r.description && (
+                                        <div className="mt-0.5 pl-[18px] text-[10px] leading-snug text-gray-500 dark:text-gray-400">
+                                          {r.description}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                         );
                       })()}
@@ -337,7 +439,8 @@ export default function ActivitySidebar({ activities, isStreaming, onClear }: Ac
                   )}
                 </div>
               );
-            })}
+            });
+            })()}
           </div>
         )}
       </div>
