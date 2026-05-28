@@ -68,6 +68,8 @@ async def _run_local(message: str, session_id: str, attachments: list[dict] | No
                     "args": event.get("args", ""),
                     "result": event.get("result", ""),
                 })
+            elif event["type"] == "warning":
+                yield _sse("warning", {"content": event["content"]})
             elif event["type"] == "citation":
                 yield _sse("citation", {
                     "source": event.get("source", ""),

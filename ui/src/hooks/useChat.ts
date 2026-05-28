@@ -103,6 +103,15 @@ export function useChat() {
           return updated;
         });
       },
+      onWarning(message) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantIdRef.current
+              ? { ...m, warning: message }
+              : m
+          )
+        );
+      },
       onError(message) {
         setMessages((prev) =>
           prev.map((m) =>

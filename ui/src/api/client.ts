@@ -11,6 +11,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   attachments?: FileAttachment[];
+  warning?: string;
 }
 
 export interface ActivityEvent {
@@ -27,6 +28,7 @@ export interface ActivityEvent {
 export interface StreamCallbacks {
   onDelta: (content: string) => void;
   onActivity: (event: Omit<ActivityEvent, "id" | "timestamp">) => void;
+  onWarning: (message: string) => void;
   onError: (message: string) => void;
   onDone: () => void;
 }
@@ -94,6 +96,9 @@ export async function sendMessage(
           switch (currentEvent) {
             case "delta":
               callbacks.onDelta(data["content"] ?? "");
+              break;
+            case "warning":
+              callbacks.onWarning(data["content"] ?? "");
               break;
             case "activity":
               callbacks.onActivity({

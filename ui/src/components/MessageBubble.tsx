@@ -204,6 +204,17 @@ export default function MessageBubble({ message, isStreaming }: MessageBubblePro
           </>
         ) : (
           <>
+            {/* Warning banner — shown when OpenAI rejects or cannot process an attached file */}
+            {message.warning && (
+              <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+                <span className="material-icons-outlined mt-0.5 shrink-0 text-[16px] text-amber-500">warning</span>
+                <div className="[&>p]:m-0">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {message.warning}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
             <div className="markdown-body">
               {segments.map((seg, i) =>
                 seg.type === "markdown" ? (
