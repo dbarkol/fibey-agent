@@ -79,14 +79,27 @@ FIELD_SCHEMA = ContentFieldSchema(
             type=ContentFieldType.STRING,
             method=GenerationMethod.EXTRACT,
             description=(
-                "The name of the field technician assigned to perform the work. "
-                "Look in the 'Dispatch Log' row near the top of the document — "
-                "it contains 'Route → <name>' or 'Route → <name>'. "
-                "Extract the name that appears immediately after 'Route →' or 'Route ->'."
-                "Do NOT use the 'Field Technical Contact' field in the document header — "
-                "that is the on-site building or facilities contact person, not the technician. "
-                "Do NOT use the Dispatcher name (that is the person who sent the work order). "
+                "The name of the field technician dispatched and assigned to perform the work. "
+                "Primary source: look in the 'Dispatch Log' row near the top of the document — "
+                "it contains 'Route -> <name>' or 'Route → <name>'. "
+                "Extract the name that appears immediately after 'Route ->' or 'Route →'. "
+                "If no 'Dispatch Log' row is present, look for the technician name in a "
+                "'Technician', 'Assigned To', or 'Tech' field in the document body. "
+                "Do NOT use the 'Assigned Field Technician' field in the document header — "
+                "that field contains the on-site supervisor contact, not the dispatched technician. "
+                "Do NOT use the Dispatcher name (listed before the Route entry). "
                 "Do NOT use names from the 'Site Access & Contact' section."
+            ),
+        ),
+        "site_technician": ContentFieldDefinition(
+            type=ContentFieldType.STRING,
+            method=GenerationMethod.EXTRACT,
+            description=(
+                "The on-site technician contact that the dispatched technician will meet at the location. "
+                "Look for a field labeled 'On-Site Technician' in the document header. "
+                "This field is optional and may be empty, null, or show '—'. "
+                "Return null if the field is empty, missing, or shows only a dash. "
+                "This is different from 'assigned_technician' who is the dispatched worker."
             ),
         ),
         "location": ContentFieldDefinition(

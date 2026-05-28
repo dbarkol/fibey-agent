@@ -74,20 +74,23 @@ def main():
 
     doc.add_paragraph()
 
-    # ── Header metadata (matches PDF: Field Technical Contact = site contact, NOT technician) ──
-    # Demo intent: Basic CU + LLM sees "Field Technical Contact: Marcus Tran" and returns
-    # Marcus Tran as the technician (WRONG). Custom analyzer is trained to look in the
-    # Dispatch Information block instead, returning J. Martinez (correct).
-    tbl = doc.add_table(rows=2, cols=3)
+    # ── Header metadata ─────────────────────────────────────────────────────────
+    # Demo intent: "Assigned Field Technician: John Smith" explicitly labels the WRONG person.
+    # The LLM reads this label and confidently returns John Smith (WRONG) in Basic CU mode.
+    # The actual technician (J. Martinez) is only in the Dispatch Log as "Route → J. Martinez".
+    # The custom analyzer ignores the header label and looks at Route → instead (CORRECT).
+    # "On-Site Technician" is a separate field (can be empty) — the tech the dispatcher meets.
+    tbl = doc.add_table(rows=2, cols=4)
     tbl.style = "Table Grid"
-    for i, header in enumerate(["Field Technical Contact", "Location", "Created"]):
+    for i, header in enumerate(["Assigned Field Technician", "On-Site Technician", "Location", "Created"]):
         c = tbl.rows[0].cells[i]
         c.text = header
         c.paragraphs[0].runs[0].bold = True
         set_cell_bg(c, "c5cae9")
     tbl.rows[1].cells[0].text = "John Smith"
-    tbl.rows[1].cells[1].text = expected["location"]
-    tbl.rows[1].cells[2].text = "2026-05-18 08:15 PDT"
+    tbl.rows[1].cells[1].text = "\u2014"           # em-dash — (none assigned)
+    tbl.rows[1].cells[2].text = expected["location"]
+    tbl.rows[1].cells[3].text = "2026-05-18 08:15 PDT"
 
     doc.add_paragraph()
 

@@ -4,10 +4,17 @@
   "status": "open",
   "priority": "critical",
   "assigned_technician": "J. Martinez",
+  "site_technician": null,
   "location": "742 Evergreen Terrace, Springfield, WA 99999",
   "parts_needed": [
-    { "part_id": "FIB-003", "quantity": 2 },
-    { "part_id": "FIB-012", "quantity": 1 }
+    {
+      "part_id": "FIB-003",
+      "quantity": 2
+    },
+    {
+      "part_id": "FIB-012",
+      "quantity": 1
+    }
   ],
   "due_date": "2026-05-20T17:00:00Z"
 }

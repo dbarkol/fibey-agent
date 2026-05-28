@@ -26,6 +26,7 @@ class WorkOrder(BaseModel):
     status: WorkOrderStatus
     priority: WorkOrderPriority
     assigned_technician: str
+    site_technician: str | None = None
     location: str
     parts_needed: list[PartNeeded] = Field(default_factory=list)
     created_at: datetime
@@ -39,6 +40,7 @@ class WorkOrderCreate(BaseModel):
     status: WorkOrderStatus = "open"
     priority: WorkOrderPriority
     assigned_technician: str
+    site_technician: str | None = None
     location: str
     parts_needed: list[PartNeeded] = Field(default_factory=list)
     due_date: datetime
@@ -52,6 +54,7 @@ class WorkOrderUpdate(BaseModel):
     status: WorkOrderStatus | None = None
     priority: WorkOrderPriority | None = None
     assigned_technician: str | None = None
+    site_technician: str | None = None
     location: str | None = None
     parts_needed: list[PartNeeded] | None = None
     due_date: datetime | None = None

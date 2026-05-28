@@ -33,6 +33,7 @@ WO = {
     "status":               "OPEN",
     "priority":             "CRITICAL",
     "assigned_technician":  "J. Martinez",
+    "site_technician":      None,            # On-site tech contact; can be empty
     "location":             "742 Evergreen Terrace, Springfield, WA 99999",
     "created_at":           "2026-05-18  08:15 PDT",
     "updated_at":           "2026-05-18  08:15 PDT",
@@ -138,18 +139,28 @@ def header_table(wo, styles):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
-    # Metadata row — "Field Technical Contact" is intentionally the SITE contact (Marcus Tran),
-    # not the assigned technician. The assigned technician is in the Dispatch Information block
-    # below (see build_pdf). This creates the desired Basic CU ambiguity for the demo.
+    # Metadata block — 2 rows × 4 columns.
+    # Row 0: "Assigned Field Technician" → John Smith  |  "On-Site Technician" → — (empty)
+    # Row 1: "Location" → address                      |  "Created" → date
+    #
+    # Demo intent: LLM reads "Assigned Field Technician: John Smith" explicitly and returns
+    # John Smith (WRONG). The actual dispatched tech (J. Martinez) is ONLY in the Dispatch Log
+    # as "Route → J. Martinez". The custom analyzer ignores this header and extracts from there.
     meta_data = [
-        [Paragraph("<b>Field Technical Contact</b>", styles["FieldLabel"]),
-         Paragraph(wo["site_contact"], styles["FieldValue"]),
-         Paragraph("<b>Location</b>", styles["FieldLabel"]),
-         Paragraph(wo["location"], styles["FieldValue"]),
-         Paragraph("<b>Created</b>", styles["FieldLabel"]),
-         Paragraph(wo["created_at"], styles["FieldValue"])],
+        [
+            Paragraph("<b>Assigned Field Technician</b>", styles["FieldLabel"]),
+            Paragraph(wo["site_contact"], styles["FieldValue"]),
+            Paragraph("<b>On-Site Technician</b>", styles["FieldLabel"]),
+            Paragraph("—", styles["FieldValue"]),
+        ],
+        [
+            Paragraph("<b>Location</b>", styles["FieldLabel"]),
+            Paragraph(wo["location"], styles["FieldValue"]),
+            Paragraph("<b>Created</b>", styles["FieldLabel"]),
+            Paragraph(wo["created_at"], styles["FieldValue"]),
+        ],
     ]
-    meta = Table(meta_data, colWidths=[0.8*inch, 1.5*inch, 0.7*inch, 2.1*inch, 0.7*inch, 1.2*inch])
+    meta = Table(meta_data, colWidths=[1.4*inch, 1.5*inch, 1.3*inch, 2.8*inch])
     meta.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, -1), LIGHT_GRAY),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),

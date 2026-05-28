@@ -16,7 +16,7 @@ from .conftest import (
 ANALYZER_ID = "cu_demo_work_order"
 
 WO_FIELDS = ["title", "description", "status", "priority",
-             "assigned_technician", "location", "due_date", "parts_needed"]
+             "assigned_technician", "site_technician", "location", "due_date", "parts_needed"]
 
 
 @pytest.fixture(scope="module")
@@ -61,57 +61,11 @@ class TestWorkOrderPdf:
             f"expected '{expected_pdf['assigned_technician']}'"
         )
 
-    def test_due_date_matches_expected(self, fields, expected_pdf):
-        assert fields.get("due_date") == expected_pdf["due_date"], (
-            f"due_date: got '{fields.get('due_date')}', expected '{expected_pdf['due_date']}'"
-        )
-
-    def test_parts_needed_matches_expected(self, fields, expected_pdf):
-        got = fields.get("parts_needed") or []
-        exp = expected_pdf["parts_needed"]
-        assert len(got) == len(exp), f"parts_needed count: got {len(got)}, expected {len(exp)}"
-        for i, (g, e) in enumerate(zip(got, exp)):
-            assert g.get("part_id") == e["part_id"], (
-                f"parts_needed[{i}].part_id: got '{g.get('part_id')}', expected '{e['part_id']}'"
-            )
-            assert int(g.get("quantity", 0)) == int(e["quantity"]), (
-                f"parts_needed[{i}].quantity: got {g.get('quantity')}, expected {e['quantity']}"
-            )
-
-
-class TestWorkOrderDocx:
-    """Same work order content as the PDF, but in .docx format.
-    Custom analyzer should extract identical fields — same expected JSON."""
-
-    @pytest.fixture(scope="class")
-    def result(self, cu_client):
-        return analyze_binary(cu_client, ANALYZER_ID, WORK_ORDER_DOCX)
-
-    @pytest.fixture(scope="class")
-    def fields(self, result):
-        return get_fields_from_result(result)
-
-    def test_all_schema_fields_present(self, fields):
-        for field in WO_FIELDS:
-            assert field in fields, f"Expected field '{field}' missing from docx result"
-
-    def test_title_non_empty(self, fields):
-        assert fields.get("title"), "title should not be empty"
-
-    def test_status_matches_expected(self, fields, expected_pdf):
-        assert fields.get("status") == expected_pdf["status"], (
-            f"status: got '{fields.get('status')}', expected '{expected_pdf['status']}'"
-        )
-
-    def test_priority_matches_expected(self, fields, expected_pdf):
-        assert fields.get("priority") == expected_pdf["priority"], (
-            f"priority: got '{fields.get('priority')}', expected '{expected_pdf['priority']}'"
-        )
-
-    def test_assigned_technician_matches_expected(self, fields, expected_pdf):
-        assert fields.get("assigned_technician") == expected_pdf["assigned_technician"], (
-            f"assigned_technician: got '{fields.get('assigned_technician')}', "
-            f"expected '{expected_pdf['assigned_technician']}'"
+    def test_site_technician_is_empty(self, fields):
+        """On-site technician is optional; the demo doc has none assigned."""
+        val = fields.get("site_technician")
+        assert val is None or val == "" or val == "—", (
+            f"site_technician should be empty/null, got '{val}'"
         )
 
     def test_due_date_matches_expected(self, fields, expected_pdf):
@@ -183,6 +137,13 @@ class TestWorkOrderDocx:
     def test_assigned_technician_matches_expected(self, fields, expected_pdf):
         assert fields.get("assigned_technician") == expected_pdf["assigned_technician"]
 
+    def test_site_technician_is_empty(self, fields):
+        """On-site technician should be null/empty in this work order."""
+        val = fields.get("site_technician")
+        assert val is None or val == "" or val == "—", (
+            f"site_technician should be empty/null, got '{val}'"
+        )
+
     @pytest.mark.xfail(reason="Custom analyzer trained on PDF/image — location may not extract from docx", strict=False)
     def test_location_matches_expected(self, fields, expected_pdf):
         assert fields.get("location") == expected_pdf["location"]
@@ -218,6 +179,13 @@ class TestScannedWorkOrderPng:
         assert fields.get("assigned_technician") == expected_png["assigned_technician"], (
             f"assigned_technician: got '{fields.get('assigned_technician')}', "
             f"expected '{expected_png['assigned_technician']}'"
+        )
+
+    def test_site_technician_is_empty(self, fields):
+        """Scanned handwritten work order — on-site technician field is optional."""
+        val = fields.get("site_technician")
+        assert val is None or val == "" or val == "—", (
+            f"site_technician should be empty/null, got '{val}'"
         )
 
     def test_parts_needed_matches_expected(self, fields, expected_png):
