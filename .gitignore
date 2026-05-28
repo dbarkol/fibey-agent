@@ -443,4 +443,4 @@ dist/
 
 # Local-only demo files (not committed)
 scripts/gen_work_order_docx.py
-content_understanding/demo_files/*.docx
+# content_understanding/demo_files/*.docx  # tracked — needed for demo
