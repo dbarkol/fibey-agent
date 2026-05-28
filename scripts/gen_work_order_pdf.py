@@ -50,9 +50,9 @@ WO = {
         {"part_id": "FIB-003", "name": "Single-Mode Splice Tray (12-fiber)",  "quantity": 2, "unit": "ea"},
         {"part_id": "FIB-012", "name": "Fiber Splice Enclosure (24-count)",   "quantity": 1, "ea": "ea"},
     ],
-    "site_contact":     "Marcus Tran",
+    "site_contact":     "John Smith",
     "site_contact_phone": "(425) 555-0183",
-    "site_contact_role": "Building Facilities Manager",
+    "site_contact_role": "Network Operations Supervisor",
     "access_notes":     "Escort required. Check in at security desk (lobby entrance). Hard hat + safety vest mandatory in parking structure.",
     "safety_protocols": [
         "Wear PPE: safety glasses, cut-resistant gloves, and high-vis vest",
@@ -89,7 +89,8 @@ CHECKLIST = [
 ]
 
 SIGN_FIELDS = [
-    ("Technician Signature", ""),       # Blank — work order is OPEN, not yet completed
+    # (role_label, print_name)  — Signature stays blank (OPEN work order)
+    ("Technician Signature", "J. Martinez"),   # Print Name pre-filled; Signature blank
     ("Supervisor Sign-off",  ""),
 ]
 
@@ -161,7 +162,7 @@ def header_table(wo, styles):
 
 def dispatch_table(wo, styles):
     """Dispatch routing block — J. Martinez appears here as a routing reference,
-    NOT labeled as 'technician'. The LLM reading flat markdown sees Marcus Tran as
+    NOT labeled as 'technician'. The LLM reading flat markdown sees John Smith as
     'Field Technical Contact' (the most prominent labeled name) and returns that.
     The custom analyzer description points exactly to the name after 'Route →' in
     this block, so it returns J. Martinez (correct).
@@ -241,7 +242,12 @@ def checklist_table(checklist, styles):
 
 
 def sign_table(fields, styles):
-    """Sign-off block with Signature + Print Name + Date columns."""
+    """Sign-off block. fields = list of (role_label, print_name).
+    Signature is always blank (OPEN work order). Print Name is pre-filled
+    where provided — J. Martinez appears here as the assigned technician,
+    but it's subtle enough that a plain LLM returns the more prominent
+    'Field Technical Contact: John Smith' instead.
+    """
     header_row = [
         Paragraph("<b>Role</b>",        styles["FieldLabel"]),
         Paragraph("<b>Signature</b>",   styles["FieldLabel"]),
@@ -249,11 +255,11 @@ def sign_table(fields, styles):
         Paragraph("<b>Date</b>",        styles["FieldLabel"]),
     ]
     rows = [header_row]
-    for label, prefill in fields:
+    for label, print_name in fields:
         rows.append([
             Paragraph(f"<b>{label}</b>", styles["FieldLabel"]),
-            Paragraph(prefill or "", styles["FieldValue"]),
-            Paragraph(prefill or "", styles["FieldValue"]),
+            Paragraph("", styles["FieldValue"]),           # Signature — always blank
+            Paragraph(print_name or "", styles["FieldValue"]),  # Print Name — may be pre-filled
             Paragraph("", styles["FieldValue"]),
         ])
 

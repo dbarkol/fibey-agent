@@ -85,7 +85,7 @@ def main():
         c.text = header
         c.paragraphs[0].runs[0].bold = True
         set_cell_bg(c, "c5cae9")
-    tbl.rows[1].cells[0].text = "Marcus Tran"
+    tbl.rows[1].cells[0].text = "John Smith"
     tbl.rows[1].cells[1].text = expected["location"]
     tbl.rows[1].cells[2].text = "2026-05-18 08:15 PDT"
 
@@ -119,7 +119,7 @@ def main():
     add_heading(doc, "Site Access & Contact", level=2)
     p = doc.add_paragraph()
     bold_run(p, "Contact: ", size=11)
-    normal_run(p, "Marcus Tran — Building Facilities Manager  |  (425) 555-0183", size=11)
+    normal_run(p, "John Smith — Network Operations Supervisor  |  (425) 555-0183", size=11)
     p2 = doc.add_paragraph()
     bold_run(p2, "Access Notes: ", size=11)
     normal_run(p2, "Escort required. Check in at security desk (lobby entrance). Hard hat + safety vest mandatory in parking structure.", size=11)
@@ -177,7 +177,7 @@ def main():
 
     doc.add_paragraph()
 
-    # ── Sign-Off (blank — work order is OPEN, not yet completed) ─────────────
+    # ── Sign-Off (Signature blank — OPEN; Print Name pre-filled with assigned tech) ─────────────
     add_heading(doc, "Sign-Off & Completion", level=2)
     sign_tbl = doc.add_table(rows=2, cols=4)
     sign_tbl.style = "Table Grid"
@@ -187,7 +187,9 @@ def main():
         c.paragraphs[0].runs[0].bold = True
         set_cell_bg(c, "c5cae9")
     sign_tbl.rows[1].cells[0].text = "Technician Signature"
-    # Leave signature, print name, date blank (OPEN work order)
+    sign_tbl.rows[1].cells[1].text = ""                               # Signature blank
+    sign_tbl.rows[1].cells[2].text = expected["assigned_technician"]  # J. Martinez in Print Name
+    sign_tbl.rows[1].cells[3].text = ""
 
     doc.add_paragraph()
     footer = doc.add_paragraph()
