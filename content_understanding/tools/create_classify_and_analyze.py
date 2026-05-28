@@ -143,7 +143,7 @@ def create_classifier(client: ContentUnderstandingClient) -> None:
     }
 
     config = ContentAnalyzerConfig(
-        return_details=True,
+        return_details=False,
         enable_segment=False,  # Each file is one document — no multi-doc segmentation needed
         content_categories=categories,
     )
