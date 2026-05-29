@@ -21,14 +21,6 @@ After switching the **Foundry IQ Ingestion** mode in the sidebar:
 | **Minimal** | ~46.1 dB *(wrong — this is the ORL @1550nm value)* | Blank ORL@1310 cell is collapsed; 46.1 shifts left into the 1310nm column |
 | **Standard** | ORL@1310 was not recorded (blank) | HTML `<td></td>` preserves the empty cell; LLM correctly reads it as absent |
 
-**Secondary demo question (parts inventory):**
-> *"How many FIB-009 units are available to pick?"*
-
-| Mode | Expected answer | Why |
-|------|----------------|-----|
-| **Minimal** | Wrong count | Blank Reserved cell collapses; Available value shifts left |
-| **Standard** | 5 units *(Current 8 − Reserved 3 = 5)* | HTML table preserves all cell boundaries |
-
 ## Prerequisites
 
 - Azure subscription with:
@@ -45,10 +37,9 @@ After switching the **Foundry IQ Ingestion** mode in the sidebar:
 uv run python scripts/gen_cu_demo_docs.py
 ```
 
-This creates two PDFs in `services/foundry-iq-docs/docs/content_understanding_docs/`:
+This creates the following PDF in `services/foundry-iq-docs/docs/content_understanding_docs/`:
 
 - **`otdr-acceptance-results.pdf`** — OTDR acceptance test table with 6 adjacent numeric columns (loss @1310, loss @1550, ORL @1310, ORL @1550) and sparse ORL cells
-- **`parts-inventory-report.pdf`** — Parts stock table with 5 adjacent numeric columns (Min Stock, Current Stock, Reserved, Available, Unit Price) and blank Reserved cells
 
 ## Step 2 — Run the setup script
 
@@ -138,8 +129,7 @@ Azure AI Search Knowledge Base MCP
   └─ fibey-iq-standard-kb ← contentExtractionMode: standard
        ↓
 Azure Blob Storage (foundry-iq-cu-demo container)
-  ├─ otdr-acceptance-results.pdf
-  └─ parts-inventory-report.pdf
+  └─ otdr-acceptance-results.pdf
 ```
 
 ## Troubleshooting
