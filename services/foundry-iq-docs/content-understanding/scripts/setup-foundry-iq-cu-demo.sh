@@ -4,7 +4,9 @@
 # This enables the side-by-side ingestion quality demo in the Fibey UI.
 #
 # Usage:
-#   ./scripts/setup-foundry-iq-cu-demo.sh [foundry-resource-group] [foundry-account-name] [foundry-project-name]
+#   ./setup-foundry-iq-cu-demo.sh [foundry-resource-group] [foundry-account-name] [foundry-project-name]
+#   ./setup-foundry-iq-cu-demo.sh --teardown   [args...]   # delete all resources created by this script
+#   ./setup-foundry-iq-cu-demo.sh --recreate   [args...]   # teardown then re-create
 #
 # Required env vars (or pass as positional args):
 #   AZURE_RESOURCE_GROUP    — resource group that contains the search service + storage
@@ -24,8 +26,18 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DOCS_DIR="$REPO_ROOT/services/foundry-iq-docs/docs/content_understanding_docs"
+# Script lives at services/foundry-iq-docs/content-understanding/scripts/
+# Repo root is 4 levels up
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../" && pwd)"
+DOCS_DIR="$SCRIPT_DIR/../docs"
+
+# ── Mode flags ─────────────────────────────────────────────────────────────────
+MODE="setup"
+if [[ "${1:-}" == "--teardown" ]]; then
+  MODE="teardown"; shift
+elif [[ "${1:-}" == "--recreate" ]]; then
+  MODE="recreate"; shift
+fi
 
 # ── Resource names ─────────────────────────────────────────────────────────────
 CONTAINER_NAME="foundry-iq-cu-demo"
@@ -59,7 +71,7 @@ if [ -z "$FOUNDRY_RESOURCE_GROUP" ] || [ -z "$FOUNDRY_ACCOUNT_NAME" ]; then
   exit 1
 fi
 
-if [ ! -d "$DOCS_DIR" ] || [ -z "$(ls -A "$DOCS_DIR" 2>/dev/null)" ]; then
+if [[ "$MODE" == "setup" ]] && { [ ! -d "$DOCS_DIR" ] || [ -z "$(ls -A "$DOCS_DIR" 2>/dev/null)" ]; }; then
   echo "ERROR: No documents found in $DOCS_DIR"
   echo "       Run 'uv run python scripts/gen_cu_demo_docs.py' first."
   exit 1
@@ -180,6 +192,61 @@ echo "Foundry Project       : $FOUNDRY_PROJECT_NAME"
 echo "CU Endpoint           : ${CU_ENDPOINT:-<not set — standard mode will use default AI services>}"
 echo ""
 
+# ─── Teardown helpers ──────────────────────────────────────────────────────────
+delete_foundry_connection() {
+  local connection_name="$1"
+  echo "  Deleting Foundry connection: $connection_name"
+  curl -sS -o /dev/null -w "  HTTP %{http_code}\n" -X DELETE \
+    "https://management.azure.com${FOUNDRY_PROJECT_RESOURCE_ID}/connections/${connection_name}?api-version=${FOUNDRY_CONNECTION_API_VERSION}" \
+    -H "Authorization: Bearer ${MANAGEMENT_TOKEN}" || true
+}
+
+delete_kb() {
+  local kb_name="$1"
+  echo "  Deleting knowledge base: $kb_name"
+  curl -sS -o /dev/null -w "  HTTP %{http_code}\n" -X DELETE \
+    "${SEARCH_ENDPOINT}/knowledgebases/${kb_name}?api-version=${KNOWLEDGE_API_VERSION}" \
+    -H "api-key: ${SEARCH_ADMIN_KEY}" || true
+}
+
+delete_ks() {
+  local ks_name="$1"
+  echo "  Deleting knowledge source: $ks_name"
+  curl -sS -o /dev/null -w "  HTTP %{http_code}\n" -X DELETE \
+    "${SEARCH_ENDPOINT}/knowledgesources/${ks_name}?api-version=${KNOWLEDGE_API_VERSION}" \
+    -H "api-key: ${SEARCH_ADMIN_KEY}" || true
+}
+
+teardown_all() {
+  echo ""
+  echo "=== Tearing down Foundry IQ CU Demo resources ==="
+  delete_foundry_connection "$MINIMAL_CONNECTION_NAME"
+  delete_foundry_connection "$STANDARD_CONNECTION_NAME"
+  delete_kb "$MINIMAL_KB_NAME"
+  delete_kb "$STANDARD_KB_NAME"
+  delete_ks "$MINIMAL_KS_NAME"
+  delete_ks "$STANDARD_KS_NAME"
+  echo "  Deleting blob container: $CONTAINER_NAME"
+  az storage container delete \
+    --name "$CONTAINER_NAME" \
+    --account-name "$STORAGE_ACCOUNT" \
+    --auth-mode key \
+    --only-show-errors 2>&1 || true
+  echo "✓ Teardown complete"
+}
+
+# ─── Mode routing ──────────────────────────────────────────────────────────────
+if [[ "$MODE" == "teardown" ]]; then
+  teardown_all
+  exit 0
+fi
+
+if [[ "$MODE" == "recreate" ]]; then
+  teardown_all
+  echo ""
+  echo "=== Recreating resources ==="
+fi
+
 # ─── 1. Create blob container ──────────────────────────────────────────────────
 echo "=== Creating blob container: $CONTAINER_NAME ==="
 az storage container create \
@@ -187,6 +254,9 @@ az storage container create \
   --account-name "$STORAGE_ACCOUNT" \
   --auth-mode key \
   --only-show-errors 2>&1 | grep -v "^$" || true
+
+# Wait for container to be fully available after creation/deletion cycle
+sleep 5
 echo "✓ Container ready"
 
 # ─── 2. Upload PDF documents ───────────────────────────────────────────────────

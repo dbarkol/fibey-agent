@@ -48,7 +48,6 @@ _TOKEN_SCOPE = "https://ai.azure.com/.default"
 _SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT", "")
 _SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "foundry-iq-docs-index")
 _SEARCH_API_KEY = os.getenv("AZURE_SEARCH_API_KEY", "")
-_SEARCH_ADMIN_KEY = os.getenv("AZURE_SEARCH_ADMIN_KEY", "") or _SEARCH_API_KEY
 
 # Content Understanding (optional)
 _CU_ENDPOINT = os.getenv("AZURE_CONTENTUNDERSTANDING_ENDPOINT", "")
@@ -159,8 +158,8 @@ def _create_foundry_iq_mcp(credential, foundry_iq_mode: str) -> MCPStreamableHTT
 
     # Azure AI Search MCP uses the Search API key or a Search-scoped bearer token.
     # Do NOT use the Foundry/AI services token or api-version=v1 (those are Toolbox-specific).
-    if _SEARCH_ADMIN_KEY:
-        auth: httpx.Auth = _ToolboxApiKeyAuth(_SEARCH_ADMIN_KEY)
+    if _SEARCH_API_KEY:
+        auth: httpx.Auth = _ToolboxApiKeyAuth(_SEARCH_API_KEY)
     else:
         class _SearchAuth(httpx.Auth):
             def auth_flow(self, request):
@@ -195,8 +194,8 @@ async def knowledge_base_search(query: str, top: int = 5) -> str:
     Returns:
         JSON string with search results including document name and content.
     """
-    if not _SEARCH_API_KEY:
-        return json.dumps({"error": "AZURE_SEARCH_API_KEY not configured"})
+    if not _SEARCH_ENDPOINT:
+        return json.dumps({"error": "AZURE_SEARCH_ENDPOINT not configured"})
 
     search_url = f"{_SEARCH_ENDPOINT}/indexes/{_SEARCH_INDEX}/docs/search?api-version=2024-07-01"
     payload = {
@@ -207,12 +206,14 @@ async def knowledge_base_search(query: str, top: int = 5) -> str:
         "select": "content,metadata_storage_name",
     }
 
+    if _SEARCH_API_KEY:
+        headers = {"api-key": _SEARCH_API_KEY, "Content-Type": "application/json"}
+    else:
+        token = _get_credential().get_token(_SEARCH_TOKEN_SCOPE).token
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            search_url,
-            json=payload,
-            headers={"api-key": _SEARCH_API_KEY, "Content-Type": "application/json"},
-        )
+        resp = await client.post(search_url, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
 
@@ -227,9 +228,12 @@ async def knowledge_base_search(query: str, top: int = 5) -> str:
 
 
 def _create_kb_search_tool() -> FunctionTool | None:
-    """Create the knowledge base search tool if search is configured."""
-    if not _SEARCH_API_KEY:
-        logger.warning("AZURE_SEARCH_API_KEY not set — running without KB search")
+    """Create the knowledge base search tool if search is configured.
+
+    Works with either AZURE_SEARCH_API_KEY (key auth) or az login (DefaultAzureCredential).
+    """
+    if not _SEARCH_ENDPOINT:
+        logger.warning("AZURE_SEARCH_ENDPOINT not set — running without KB search")
         return None
 
     return FunctionTool(

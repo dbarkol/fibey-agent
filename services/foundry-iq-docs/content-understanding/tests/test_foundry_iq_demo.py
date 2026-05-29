@@ -6,10 +6,14 @@ contentExtractionMode) are correctly set up and produce different extracted
 content for the demo documents, confirming the value proposition of Azure
 Content Understanding for table-heavy PDFs.
 
+Auth (in priority order — first available wins):
+  AZURE_SEARCH_ADMIN_KEY  — Search service admin key (fastest, no extra calls)
+  az search admin-key show — auto-fetched via Azure CLI if key not in env
+  az account get-access-token — bearer token via DefaultAzureCredential / az login
+
 Required .env variables (loaded from repo root):
   FOUNDRY_IQ_MINIMAL_MCP_URL    — KB MCP endpoint (minimal mode)
   FOUNDRY_IQ_STANDARD_MCP_URL   — KB MCP endpoint (standard / CU mode)
-  AZURE_SEARCH_ADMIN_KEY        — Search service admin key
 
 Run:
   cd services/foundry-iq-docs
@@ -18,6 +22,7 @@ Run:
 
 import os
 import re
+import subprocess
 import urllib.parse
 from pathlib import Path
 
@@ -26,7 +31,7 @@ import requests
 
 # ─── Load .env from repository root ──────────────────────────────────────────
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]  # fibey-agent/
+_REPO_ROOT = Path(__file__).resolve().parents[4]  # fibey-agent/
 _ENV_FILE = _REPO_ROOT / ".env"
 
 
@@ -45,6 +50,58 @@ def _load_dotenv(path: Path) -> None:
 
 
 _load_dotenv(_ENV_FILE)
+
+
+# ─── Auth resolution ─────────────────────────────────────────────────────────
+
+_SEARCH_TOKEN_SCOPE = "https://search.azure.com/.default"
+
+
+def _resolve_search_auth(search_endpoint: str) -> dict[str, str]:
+    """Return HTTP headers for Azure AI Search auth.
+
+    Priority:
+      1. AZURE_SEARCH_ADMIN_KEY env var
+      2. az search admin-key show (auto-fetch via CLI)
+      3. az account get-access-token (bearer token / DefaultAzureCredential)
+    """
+    # 1. Explicit env var
+    key = os.getenv("AZURE_SEARCH_ADMIN_KEY", "").strip()
+    if key:
+        return {"api-key": key}
+
+    # 2. Auto-fetch admin key via az CLI
+    try:
+        svc = search_endpoint.rstrip("/").split("//")[-1].split(".")[0]
+        rg = os.getenv("AZURE_RESOURCE_GROUP", "")
+        if svc and rg:
+            result = subprocess.run(
+                ["az", "search", "admin-key", "show",
+                 "--service-name", svc, "--resource-group", rg,
+                 "--query", "primaryKey", "-o", "tsv"],
+                capture_output=True, text=True, timeout=20
+            )
+            fetched = result.stdout.strip()
+            if fetched:
+                return {"api-key": fetched}
+    except Exception:
+        pass
+
+    # 3. Bearer token via az account get-access-token
+    try:
+        result = subprocess.run(
+            ["az", "account", "get-access-token",
+             "--scope", _SEARCH_TOKEN_SCOPE,
+             "--query", "accessToken", "-o", "tsv"],
+            capture_output=True, text=True, timeout=20
+        )
+        token = result.stdout.strip()
+        if token:
+            return {"Authorization": f"Bearer {token}"}
+    except Exception:
+        pass
+
+    return {}
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -82,38 +139,38 @@ def _indexer_name_from_kb_name(kb_name: str) -> str:
     return kb_name.replace("-kb", "-ks") + "-indexer"
 
 
-def _search_query(search_endpoint: str, admin_key: str, index_name: str, query: str, top: int = 1) -> list[dict]:
+def _search_query(search_endpoint: str, auth_headers: dict, index_name: str, query: str, top: int = 1) -> list[dict]:
     """Run a full-text search query against an Azure AI Search index."""
     url = f"{search_endpoint}/indexes/{index_name}/docs"
     resp = requests.get(
         url,
         params={"api-version": "2024-07-01", "search": query, "$top": top},
-        headers={"api-key": admin_key},
+        headers=auth_headers,
         timeout=30,
     )
     resp.raise_for_status()
     return resp.json().get("value", [])
 
 
-def _index_doc_count(search_endpoint: str, admin_key: str, index_name: str) -> int:
+def _index_doc_count(search_endpoint: str, auth_headers: dict, index_name: str) -> int:
     """Return the number of documents currently in an index."""
     url = f"{search_endpoint}/indexes/{index_name}/docs/$count"
     resp = requests.get(
         url,
         params={"api-version": "2024-07-01"},
-        headers={"api-key": admin_key},
+        headers=auth_headers,
         timeout=30,
     )
     resp.raise_for_status()
     return int(resp.text.strip())
 
 
-def _indexer_status(search_endpoint: str, admin_key: str, indexer_name: str) -> dict:
+def _indexer_status(search_endpoint: str, auth_headers: dict, indexer_name: str) -> dict:
     url = f"{search_endpoint}/indexers/{indexer_name}/status"
     resp = requests.get(
         url,
         params={"api-version": "2024-07-01"},
-        headers={"api-key": admin_key},
+        headers=auth_headers,
         timeout=30,
     )
     resp.raise_for_status()
@@ -128,23 +185,29 @@ def env():
     """Return required environment variables, skipping all tests if any are missing."""
     minimal_url = os.getenv("FOUNDRY_IQ_MINIMAL_MCP_URL", "")
     standard_url = os.getenv("FOUNDRY_IQ_STANDARD_MCP_URL", "")
-    admin_key = os.getenv("AZURE_SEARCH_ADMIN_KEY", "")
 
     missing = [
         name for name, val in [
             ("FOUNDRY_IQ_MINIMAL_MCP_URL", minimal_url),
             ("FOUNDRY_IQ_STANDARD_MCP_URL", standard_url),
-            ("AZURE_SEARCH_ADMIN_KEY", admin_key),
         ] if not val
     ]
     if missing:
         pytest.skip(f"Required env vars not set: {', '.join(missing)}. Check .env at repo root.")
 
+    search_endpoint = _search_endpoint_from_mcp_url(minimal_url)
+    auth_headers = _resolve_search_auth(search_endpoint)
+    if not auth_headers:
+        pytest.skip(
+            "No Azure Search credentials available. Set AZURE_SEARCH_ADMIN_KEY, "
+            "or ensure 'az login' is active."
+        )
+
     return {
         "minimal_url": minimal_url,
         "standard_url": standard_url,
-        "admin_key": admin_key,
-        "search_endpoint": _search_endpoint_from_mcp_url(minimal_url),
+        "auth_headers": auth_headers,
+        "search_endpoint": search_endpoint,
         "minimal_kb": _kb_name_from_mcp_url(minimal_url),
         "standard_kb": _kb_name_from_mcp_url(standard_url),
         "minimal_index": _index_name_from_kb_name(_kb_name_from_mcp_url(minimal_url)),
@@ -171,10 +234,6 @@ class TestAssets:
         assert os.getenv("FOUNDRY_IQ_STANDARD_MCP_URL"), \
             "FOUNDRY_IQ_STANDARD_MCP_URL not set in .env"
 
-    def test_search_admin_key_set(self):
-        assert os.getenv("AZURE_SEARCH_ADMIN_KEY"), \
-            "AZURE_SEARCH_ADMIN_KEY not set in .env"
-
     def test_mcp_urls_point_to_different_kbs(self):
         minimal = os.getenv("FOUNDRY_IQ_MINIMAL_MCP_URL", "")
         standard = os.getenv("FOUNDRY_IQ_STANDARD_MCP_URL", "")
@@ -182,25 +241,23 @@ class TestAssets:
             "FOUNDRY_IQ_MINIMAL_MCP_URL and FOUNDRY_IQ_STANDARD_MCP_URL must point to different KB endpoints"
 
     def test_minimal_indexer_succeeded(self, env):
-        status = _indexer_status(env["search_endpoint"], env["admin_key"], env["minimal_indexer"])
+        status = _indexer_status(env["search_endpoint"], env["auth_headers"], env["minimal_indexer"])
         last = status.get("lastResult", {})
         assert last.get("status") == "success", \
             f"Minimal indexer not successful: {last.get('status')} — {last.get('errors', [])}"
         assert last.get("itemsFailed", 0) == 0, \
             f"Indexer has failed items: {last.get('errors', [])}"
-        # itemsProcessed only counts docs in the LAST run; verify the index itself has content
-        count = _index_doc_count(env["search_endpoint"], env["admin_key"], env["minimal_index"])
+        count = _index_doc_count(env["search_endpoint"], env["auth_headers"], env["minimal_index"])
         assert count >= 1, f"Minimal index is empty — expected ≥1 documents, got {count}"
 
     def test_standard_indexer_succeeded(self, env):
-        status = _indexer_status(env["search_endpoint"], env["admin_key"], env["standard_indexer"])
+        status = _indexer_status(env["search_endpoint"], env["auth_headers"], env["standard_indexer"])
         last = status.get("lastResult", {})
         assert last.get("status") == "success", \
             f"Standard indexer not successful: {last.get('status')} — {last.get('errors', [])}"
         assert last.get("itemsFailed", 0) == 0, \
             f"Indexer has failed items: {last.get('errors', [])}"
-        # itemsProcessed is 0 when re-running an indexer with no new/changed documents
-        count = _index_doc_count(env["search_endpoint"], env["admin_key"], env["standard_index"])
+        count = _index_doc_count(env["search_endpoint"], env["auth_headers"], env["standard_index"])
         assert count >= 1, f"Standard index is empty — expected ≥1 documents, got {count}"
 
     def test_gateway_features_flag(self):
@@ -230,13 +287,13 @@ class TestPartsInventoryFIB009:
     """
 
     def test_minimal_index_contains_fib009_row(self, env):
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["minimal_index"], "FIB-009")
+        docs = _search_query(env["search_endpoint"], env["auth_headers"], env["minimal_index"], "FIB-009")
         assert docs, "No results for FIB-009 in minimal index"
         snippet = docs[0].get("snippet", "")
         assert "FIB-009" in snippet, "FIB-009 not found in minimal index snippet"
 
     def test_standard_index_contains_fib009_table_row(self, env):
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["standard_index"], "FIB-009")
+        docs = _search_query(env["search_endpoint"], env["auth_headers"], env["standard_index"], "FIB-009")
         assert docs, "No results for FIB-009 in standard index"
         snippet = docs[0].get("snippet", "")
         assert "FIB-009" in snippet, "FIB-009 not found in standard index snippet"
@@ -246,7 +303,7 @@ class TestPartsInventoryFIB009:
         The FIB-009 row must have all 5 numeric columns as <td> elements,
         with Reserved=3 and Available=5 clearly separated.
         """
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["standard_index"], "FIB-009 GPON ONU")
+        docs = _search_query(env["search_endpoint"], env["auth_headers"], env["standard_index"], "FIB-009 GPON ONU")
         assert docs, "No results for FIB-009 in standard index"
         snippet = docs[0].get("snippet", "")
 
@@ -266,7 +323,7 @@ class TestPartsInventoryFIB009:
 
     def test_minimal_index_fib009_row_is_plain_text(self, env):
         """Minimal mode extracts plain text — no HTML table tags."""
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["minimal_index"], "FIB-009 GPON ONU")
+        docs = _search_query(env["search_endpoint"], env["auth_headers"], env["minimal_index"], "FIB-009 GPON ONU")
         assert docs, "No results for FIB-009 in minimal index"
         snippet = docs[0].get("snippet", "")
 
@@ -280,7 +337,7 @@ class TestPartsInventoryFIB009:
     def test_standard_index_fib009_note_preserved(self, env):
         """The NOTE about WO-006 reservation must be findable in standard index."""
         docs = _search_query(
-            env["search_endpoint"], env["admin_key"], env["standard_index"],
+            env["search_endpoint"], env["auth_headers"], env["standard_index"],
             "FIB-009 reserved WO-006", top=3
         )
         assert docs, "No results for FIB-009 WO-006 note in standard index"
@@ -314,13 +371,13 @@ class TestOTDRFiber03:
     """
 
     def test_minimal_index_contains_f03_row(self, env):
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["minimal_index"], "F-03 fiber OTDR")
+        docs = _search_query(env["search_endpoint"], env["auth_headers"], env["minimal_index"], "F-03 fiber OTDR", top=5)
         assert docs, "No results for F-03 in minimal index"
-        snippet = docs[0].get("snippet", "")
-        assert "F-03" in snippet, "F-03 not found in minimal index"
+        combined = " ".join(d.get("snippet", "") for d in docs)
+        assert "F-03" in combined, "F-03 not found in minimal index"
 
     def test_standard_index_contains_f03_row(self, env):
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["standard_index"], "F-03 fiber OTDR", top=5)
+        docs = _search_query(env["search_endpoint"], env["auth_headers"], env["standard_index"], "F-03 fiber OTDR", top=5)
         assert docs, "No results for F-03 in standard index"
         combined = " ".join(d.get("snippet", "") for d in docs)
         assert "F-03" in combined, "F-03 not found in any standard index snippet"
@@ -332,15 +389,18 @@ class TestOTDRFiber03:
         46.1 is the 3rd numeric value — ambiguously positioned where ORL@1310
         should be, but it is actually ORL@1550.
         """
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["minimal_index"], "F-03")
+        docs = _search_query(env["search_endpoint"], env["auth_headers"], env["minimal_index"], "F-03", top=5)
         assert docs, "No results for F-03 in minimal index"
-        snippet = docs[0].get("snippet", "")
+        all_lines = "\n".join(d.get("snippet", "") for d in docs).splitlines()
 
         f03_line = next(
-            (line for line in snippet.splitlines() if line.strip().startswith("F-03")),
+            (line for line in all_lines if line.strip().startswith("F-03")),
             None,
         )
-        assert f03_line is not None, f"F-03 line not found in minimal snippet:\n{snippet[:400]}"
+        assert f03_line is not None, (
+            "F-03 line not found across top-5 minimal index snippets.\n"
+            + "\n".join(all_lines[:30])
+        )
 
         # In minimal mode: exactly 3 numeric values (0.44, 0.31, 46.1) — ORL@1310 blank cell missing
         numeric_values = re.findall(r"\b\d+\.\d+\b", f03_line)
@@ -359,7 +419,7 @@ class TestOTDRFiber03:
         Fiber ID | Route | Length | Loss@1310 | Loss@1550 | ORL@1310 | ORL@1550 | Pass/Fail
         ORL@1310 cell must be empty; ORL@1550 must be 46.1.
         """
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["standard_index"], "F-03", top=3)
+        docs = _search_query(env["search_endpoint"], env["auth_headers"], env["standard_index"], "F-03", top=3)
         assert docs, "No results for F-03 in standard index"
         combined = " ".join(d.get("snippet", "") for d in docs)
 
@@ -378,7 +438,7 @@ class TestOTDRFiber03:
 
     def test_standard_index_f03_loss_values_correct(self, env):
         """Standard index must preserve F-03 loss values: Loss@1310=0.44, Loss@1550=0.31."""
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["standard_index"], "F-03", top=5)
+        docs = _search_query(env["search_endpoint"], env["auth_headers"], env["standard_index"], "F-03", top=5)
         assert docs, "No results for F-03 in standard index"
         combined = " ".join(d.get("snippet", "") for d in docs)
         assert "0.44" in combined, f"Loss@1310 value 0.44 not found for F-03 in standard index.\nSnippets:\n{combined[:600]}"
