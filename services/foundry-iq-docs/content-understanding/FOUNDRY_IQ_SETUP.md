@@ -13,8 +13,21 @@ This guide sets up the **Foundry IQ Ingestion Mode demo** for Fibey Field Ops. T
 
 After switching the **Foundry IQ Ingestion** mode in the sidebar:
 
-- *"What is the insertion loss at 1550 nm for fiber F-04?"* — F-04 has two missing ORL values; minimal parser misreads the adjacent columns
-- *"How many FIB-009 units are available to pick?"* — FIB-009 has 3 units reserved; minimal parser collapses the blank Reserved cell and returns the wrong Available count
+**Primary demo question (OTDR report):**
+> *"What is the ORL reading at 1310nm for fiber F-03?"*
+
+| Mode | Expected answer | Why |
+|------|----------------|-----|
+| **Minimal** | ~46.1 dB *(wrong — this is the ORL @1550nm value)* | Blank ORL@1310 cell is collapsed; 46.1 shifts left into the 1310nm column |
+| **Standard** | ORL@1310 was not recorded (blank) | HTML `<td></td>` preserves the empty cell; LLM correctly reads it as absent |
+
+**Secondary demo question (parts inventory):**
+> *"How many FIB-009 units are available to pick?"*
+
+| Mode | Expected answer | Why |
+|------|----------------|-----|
+| **Minimal** | Wrong count | Blank Reserved cell collapses; Available value shifts left |
+| **Standard** | 5 units *(Current 8 − Reserved 3 = 5)* | HTML table preserves all cell boundaries |
 
 ## Prerequisites
 
