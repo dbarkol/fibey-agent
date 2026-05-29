@@ -154,7 +154,7 @@ After deployment, configure managed identity permissions for the agent-service:
 # Get agent-service managed identity principal ID
 AGENT_MI_ID=$(az containerapp show \
   --name fibey-apps-agent-service \
-  --resource-group rg-fibey-westus2 \
+  --resource-group <your-resource-group> \
   --query identity.principalId -o tsv)
 
 echo "Agent Service MI: $AGENT_MI_ID"

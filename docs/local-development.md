@@ -99,16 +99,15 @@ Copy `.env.example` to `.env` and configure:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AGENT_MODE` | No | `local` | `local` or `hosted` |
-| `FOUNDRY_PROJECT_ENDPOINT` | Hosted mode | — | Foundry project endpoint |
+| `AGENT_MODE` | No | `local` | `local`, `containerapp`, or `hosted` |
+| `FOUNDRY_PROJECT_ENDPOINT` | Hosted/containerapp mode | — | Foundry project endpoint |
 | `FOUNDRY_MODEL` | No | `gpt-4.1-mini` | Model deployment name |
-| `HOSTED_AGENT_NAME` | Hosted mode | — | Hosted agent name |
-| `TOOLBOX_MCP_URL` | For real toolbox access | — | Foundry Toolbox MCP endpoint |
-| `AZURE_SEARCH_ENDPOINT` | For FoundryIQ | — | Azure AI Search endpoint |
-| `KB_NAME` | For FoundryIQ | — | Knowledge base name |
-| `INVENTORY_MCP_URL` | No | `http://localhost:8001` | Local inventory MCP URL |
-| `WORK_ORDERS_API_URL` | No | `http://localhost:8002` | Local work orders API URL |
-| `STATUS_DASHBOARD_URL` | No | `http://localhost:8003` | Local status dashboard URL |
+| `HOSTED_AGENT_NAME` | Hosted mode | `fibey-agent` | Hosted agent name |
+| `CONTAINERAPP_AGENT_URL` | Containerapp mode | — | URL of the deployed agent-service Container App |
+| `TOOLBOX_MCP_URL` | For real toolbox access | — | Foundry Toolbox MCP endpoint (without `api-version` — code appends `?api-version=v1`) |
+| `AZURE_SEARCH_ENDPOINT` | For direct KB fallback | — | Azure AI Search endpoint |
+| `AZURE_SEARCH_INDEX` | For direct KB fallback | `foundry-iq-docs-index` | Search index name |
+| `AZURE_SEARCH_API_KEY` | For direct KB fallback | — | Search admin/query key |
 | `GATEWAY_HOST` | No | `0.0.0.0` | Gateway bind host |
 | `GATEWAY_PORT` | No | `8080` | Gateway bind port |
 

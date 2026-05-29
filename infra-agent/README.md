@@ -6,16 +6,16 @@ This folder documents the Azure AI Foundry hosted agent deployment for Fibey.
 
 | Property | Value |
 |----------|-------|
-| Foundry Project | `e2e-tests-westus2` |
-| Account | `e2e-tests-westus2-account.services.ai.azure.com` |
+| Foundry Project | `<your-foundry-project>` |
+| Account | `<your-foundry-account>.services.ai.azure.com` |
 | Model | `gpt-4.1-mini` (GlobalStandard) |
-| Toolbox | `fibey` (work orders, inventory, knowledge base) |
+| Toolbox | `<your-toolbox-name>` (work orders, inventory, knowledge base) |
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  Azure AI Foundry (e2e-tests-westus2)            │
+│  Azure AI Foundry (<your-foundry-project>)       │
 │                                                  │
 │  ┌──────────────────┐   ┌──────────────────────┐ │
 │  │  Hosted Agent    │──▶│  Foundry Toolbox      │ │
@@ -84,7 +84,7 @@ After deployment, test via the Foundry playground or API:
 ```bash
 # Via az CLI
 az ai agent create-run \
-  --project-endpoint "https://e2e-tests-westus2-account.services.ai.azure.com/api/projects/e2e-tests-westus2" \
+  --project-endpoint "https://<your-foundry-account>.services.ai.azure.com/api/projects/<your-foundry-project>" \
   --agent-name "fibey-agent"
 ```
 
@@ -109,7 +109,7 @@ The agent supports two modes:
 | **History** | In-memory `AgentSession` | Managed by Foundry platform |
 | **Toolbox auth** | `_AzureAuthTransport` (CLI cred) | Managed by platform |
 | **Skills** | `SkillsProvider` ✅ | `SkillsProvider` ✅ |
-| **MCP client** | `MCPStreamableHTTPTool` (local httpx) | `FoundryMCPTool` (server-side) |
+| **MCP client** | `MCPStreamableHTTPTool` (local httpx + `_AzureAuthTransport`) | `MCPStreamableHTTPTool` (httpx + `ToolboxAuth`, token from managed identity) |
 
 ## Foundry Toolbox
 
