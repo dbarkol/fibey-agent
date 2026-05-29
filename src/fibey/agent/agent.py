@@ -47,7 +47,8 @@ _TOKEN_SCOPE = "https://ai.azure.com/.default"
 # Azure AI Search configuration for direct KB queries
 _SEARCH_ENDPOINT = os.getenv("AZURE_SEARCH_ENDPOINT", "")
 _SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "foundry-iq-docs-index")
-_SEARCH_API_KEY = os.getenv("AZURE_SEARCH_API_KEY", "")
+# Accept either key; admin key also works for read operations
+_SEARCH_API_KEY = os.getenv("AZURE_SEARCH_API_KEY", "") or os.getenv("AZURE_SEARCH_ADMIN_KEY", "")
 
 # Content Understanding (optional)
 _CU_ENDPOINT = os.getenv("AZURE_CONTENTUNDERSTANDING_ENDPOINT", "")
@@ -156,19 +157,17 @@ def _create_foundry_iq_mcp(credential, foundry_iq_mode: str) -> MCPStreamableHTT
 
     logger.info("Foundry IQ KB MCP (%s): %s", foundry_iq_mode, url)
 
-    # Azure AI Search MCP uses the Search API key or a Search-scoped bearer token.
-    # Do NOT use the Foundry/AI services token or api-version=v1 (those are Toolbox-specific).
+    # header_provider only injects on call_tool(), not on connect()/initialize.
+    # Bake auth into the AsyncClient's default_headers so every request is authenticated,
+    # including the initial MCP handshake.
     if _SEARCH_API_KEY:
-        auth: httpx.Auth = _ToolboxApiKeyAuth(_SEARCH_API_KEY)
+        default_headers = {"api-key": _SEARCH_API_KEY}
     else:
-        class _SearchAuth(httpx.Auth):
-            def auth_flow(self, request):
-                request.headers["Authorization"] = f"Bearer {credential.get_token(_SEARCH_TOKEN_SCOPE).token}"
-                yield request
-        auth = _SearchAuth()
+        token = credential.get_token(_SEARCH_TOKEN_SCOPE).token
+        default_headers = {"Authorization": f"Bearer {token}"}
 
     auth_http_client = httpx.AsyncClient(
-        auth=auth,
+        headers=default_headers,
         timeout=120.0,
     )
 
