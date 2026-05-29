@@ -224,7 +224,7 @@ export default function ActivitySidebar({ activities, isStreaming, onClear, enab
             <span className="material-icons-outlined text-[18px] text-amber-500 dark:text-amber-400">
               hub
             </span>
-            <h2 className="text-sm font-semibold">Foundry IQ Ingestion</h2>
+            <h2 className="text-sm font-semibold">KB Extraction Mode</h2>
           </div>
           <div className="flex flex-col gap-1 px-4 py-3">
             {(
@@ -233,15 +233,15 @@ export default function ActivitySidebar({ activities, isStreaming, onClear, enab
                   mode: "minimal" as FoundryIqMode,
                   label: "Minimal",
                   icon: "text_fields",
-                  desc: "Standard text extraction — free",
-                  note: "Tables with empty cells may be misread",
+                  desc: "Plain text only · no layout analysis",
+                  note: "Sparse tables may lose column alignment",
                 },
                 {
                   mode: "standard" as FoundryIqMode,
-                  label: "Standard (Azure CU)",
+                  label: "Standard · Azure CU",
                   icon: "table_chart",
-                  desc: "Content Understanding — advanced OCR",
-                  note: "Accurate table layout, empty-cell aware",
+                  desc: "Full pipeline · Azure Content Understanding",
+                  note: "HTML table output preserves column structure",
                 },
               ] as const
             ).map(({ mode, label, icon, desc, note }) => {
