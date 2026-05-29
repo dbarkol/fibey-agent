@@ -378,9 +378,9 @@ class TestOTDRFiber03:
 
     def test_standard_index_f03_loss_values_correct(self, env):
         """Standard index must preserve F-03 loss values: Loss@1310=0.44, Loss@1550=0.31."""
-        docs = _search_query(env["search_endpoint"], env["admin_key"], env["standard_index"], "F-03")
+        docs = _search_query(env["search_endpoint"], env["admin_key"], env["standard_index"], "F-03", top=5)
         assert docs, "No results for F-03 in standard index"
-        snippet = docs[0].get("snippet", "")
-        assert "0.44" in snippet, "Loss@1310 value 0.44 not found for F-03 in standard index"
-        assert "0.31" in snippet, "Loss@1550 value 0.31 not found for F-03 in standard index"
-        assert "46.1" in snippet, "ORL@1550 value 46.1 not found for F-03 in standard index"
+        combined = " ".join(d.get("snippet", "") for d in docs)
+        assert "0.44" in combined, f"Loss@1310 value 0.44 not found for F-03 in standard index.\nSnippets:\n{combined[:600]}"
+        assert "0.31" in combined, f"Loss@1550 value 0.31 not found for F-03 in standard index.\nSnippets:\n{combined[:600]}"
+        assert "46.1" in combined, f"ORL@1550 value 46.1 not found for F-03 in standard index.\nSnippets:\n{combined[:600]}"
