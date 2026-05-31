@@ -34,7 +34,7 @@ services:
                   sku:
                     capacity: 10
                     name: GlobalStandard
-            startupCommand: python src/fibey/agent/hosted.py
+            startupCommand: python -m fibey.agent.hosted
     gateway:
         project: .
         host: containerapp
