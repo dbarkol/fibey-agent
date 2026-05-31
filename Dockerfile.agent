@@ -11,6 +11,8 @@ RUN if [ -f requirements.txt ]; then \
         echo "No requirements.txt found"; \
     fi
 
+ENV PYTHONPATH=/app/user_agent/src
+
 EXPOSE 8088
 
-CMD ["python", "src/fibey/agent/hosted.py"]
+CMD ["python", "-m", "fibey.agent.hosted"]

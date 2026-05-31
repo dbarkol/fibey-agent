@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("fibey").setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Fibey Agent Gateway")
@@ -146,7 +149,10 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
                     return
 
                 buffer = ""
+                stream_done = False
                 async for chunk in resp.aiter_text():
+                    if stream_done:
+                        break
                     buffer += chunk
                     while "\n" in buffer:
                         line, buffer = buffer.split("\n", 1)
@@ -157,6 +163,7 @@ async def _run_hosted(message: str, session_id: str) -> AsyncGenerator[str, None
 
                         raw = line[6:]
                         if raw == "[DONE]":
+                            stream_done = True
                             break
 
                         try:

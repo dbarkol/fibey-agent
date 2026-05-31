@@ -45,7 +45,7 @@ _SEARCH_API_KEY = os.getenv("AZURE_SEARCH_API_KEY", "")
 def _load_system_prompt() -> str:
     """Load the system prompt from markdown file."""
     if SYSTEM_PROMPT_PATH.exists():
-        return SYSTEM_PROMPT_PATH.read_text()
+        return SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
     return "You are Fibey, a helpful AI assistant."
 
 
@@ -184,7 +184,58 @@ def _create_kb_search_tool() -> FunctionTool | None:
     )
 
 
-def create_agent() -> tuple[Agent, list]:
+async def _build_skills_provider(credential) -> "SkillsProvider | None":
+    """Build a SkillsProvider, preferring MCP-published skills when available.
+
+    Strategy:
+      - If TOOLBOX_MCP_URL is set and SKILLS_SOURCE != "file", try to load
+        skills from the toolbox MCP via resources/list + resources/read
+        (SEP-2640). Falls back to FileSkillsSource on failure.
+      - Otherwise use the local FileSkillsSource at SKILLS_PATH.
+    """
+    from .mcp_skills_source import MCPSkillsSource  # local import to avoid hard mcp dep at module load
+
+    toolbox_url = os.getenv("TOOLBOX_MCP_URL", "")
+    prefer = os.getenv("SKILLS_SOURCE", "auto").lower()  # auto | file | mcp
+
+    if toolbox_url and prefer in ("auto", "mcp"):
+        if "api-version" not in toolbox_url:
+            sep = "&" if "?" in toolbox_url else "?"
+            toolbox_url = f"{toolbox_url}{sep}api-version=v1"
+
+        api_key = os.getenv("TOOLBOX_API_KEY", "")
+        auth = _ToolboxApiKeyAuth(api_key) if api_key else _ToolboxAuth(credential)
+        mcp_source = MCPSkillsSource(
+            url=toolbox_url,
+            httpx_auth=auth,
+            extra_headers={"Foundry-Features": "Toolboxes=V1Preview"},
+        )
+        try:
+            skills = await mcp_source.get_skills()
+            if skills:
+                logger.info("Using MCP-published skills (%d)", len(skills))
+                # Wrap loaded skills in an InMemorySkillsSource so SkillsProvider
+                # doesn't re-fetch on every turn.
+                from agent_framework import InMemorySkillsSource
+                return SkillsProvider(InMemorySkillsSource(skills))
+            logger.warning("MCP returned no skills; falling back to file-based skills")
+        except Exception as exc:
+            if prefer == "mcp":
+                raise
+            logger.warning("MCP skills load failed (%s); falling back to FileSkillsSource", exc)
+
+    if prefer == "mcp":
+        # Strict MCP mode requested but we got here (no URL or empty result) —
+        # do NOT fall back to the local SKILLS_PATH.
+        logger.warning("SKILLS_SOURCE=mcp but no MCP skills loaded; running without skills")
+        return None
+
+    if SKILLS_PATH.is_dir():
+        return SkillsProvider(FileSkillsSource(SKILLS_PATH))
+    return None
+
+
+async def create_agent() -> tuple[Agent, list]:
     """Create the agent with Foundry client and Toolbox MCP connection."""
     credential = _get_credential()
 
@@ -204,10 +255,7 @@ def create_agent() -> tuple[Agent, list]:
         if kb_tool:
             tools.append(kb_tool)
 
-    skills_provider = None
-    if SKILLS_PATH.is_dir():
-        skills_source = FileSkillsSource(SKILLS_PATH)
-        skills_provider = SkillsProvider(skills_source)
+    skills_provider = await _build_skills_provider(credential)
 
     agent = Agent(
         client=client,
@@ -229,7 +277,7 @@ async def run_agent(message: str, session: dict) -> AsyncGenerator[dict, None]:
     - {"type": "activity", "tool": "...", "status": "...", "detail": "..."}
     - {"type": "citation", "source": "...", "url": "..."}
     """
-    agent, tools = create_agent()
+    agent, tools = await create_agent()
 
     agent_session = session.get("agent_session")
     if not agent_session:

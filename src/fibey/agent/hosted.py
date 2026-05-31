@@ -1,39 +1,35 @@
-"""Fibey Agent — Foundry hosted agent entrypoint.
+"""Fibey Agent — Foundry hosted agent entrypoint (Responses protocol).
 
-Deployed to Azure AI Foundry as a hosted agent using the responses protocol.
-Follows the foundry-samples agent-framework pattern.
+Follows the foundry-samples 04-foundry-toolbox pattern:
+  https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/agent-framework/responses/04-foundry-toolbox
 
-Architecture (hosted mode):
-    Single agent with:
-    - Foundry Toolbox MCP tool (work orders, inventory, knowledge base)
-    - SkillsProvider for deterministic routing (field-briefing,
-      inventory-lookup, knowledge-retrieval, work-order-management,
-      work-order-preparation)
-
-Environment variables (auto-injected by Foundry hosting):
-    FOUNDRY_PROJECT_ENDPOINT — project endpoint URL
-
-Environment variables (set in agent.yaml):
-    AZURE_AI_MODEL_DEPLOYMENT_NAME — model deployment name (e.g. gpt-4.1-mini)
-    TOOLBOX_MCP_URL — Foundry Toolbox MCP endpoint URL
+Environment variables:
+    FOUNDRY_PROJECT_ENDPOINT          (auto-injected by Foundry hosting)
+    AZURE_AI_MODEL_DEPLOYMENT_NAME    set in agent.yaml
+    TOOLBOX_NAME                      set in agent.yaml (e.g. fibey-toolbox-linda)
+    AZURE_CLIENT_ID / AZURE_TENANT_ID (auto-injected for managed identity)
 """
 
+import asyncio
 import logging
 import os
 from pathlib import Path
 
 import httpx
 import mcp.types
-from agent_framework import Agent, MCPStreamableHTTPTool, SkillsProvider
-from agent_framework.foundry import FoundryChatClient
-from agent_framework_foundry_hosting import ResponsesHostServer
-from azure.identity import (
-    AzureDeveloperCliCredential,
-    ChainedTokenCredential,
-    ManagedIdentityCredential,
-    get_bearer_token_provider,
+from agent_framework import (
+    Agent,
+    InMemorySkillsSource,
+    MCPStreamableHTTPTool,
+    SkillsProvider,
 )
+from agent_framework.foundry import FoundryChatClient
+from agent_framework.observability import configure_otel_providers
+from agent_framework_foundry_hosting import ResponsesHostServer
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from dotenv import load_dotenv
+
+from .mcp_skills_source import MCPSkillsSource
 
 load_dotenv()
 
@@ -41,53 +37,136 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.md"
-SKILLS_DIR = Path(__file__).parent / "skills"
 
 
 # ---------------------------------------------------------------------------
-# Workaround: Azure AI Search KB MCP returns resource content with uri: null
-# or uri: "", which fails pydantic AnyUrl validation in the MCP SDK.
-# Relax the uri field to accept any string (or None) so parsing succeeds.
+# Workaround: Azure AI Search KB MCP can return resource content with
+# uri: null/"", which fails pydantic AnyUrl validation in the MCP SDK.
 # ---------------------------------------------------------------------------
-for _cls in [mcp.types.ResourceContents, mcp.types.TextResourceContents, mcp.types.BlobResourceContents]:
+for _cls in (
+    mcp.types.ResourceContents,
+    mcp.types.TextResourceContents,
+    mcp.types.BlobResourceContents,
+):
     _cls.model_fields["uri"].annotation = str | None
     _cls.model_fields["uri"].default = None
     _cls.model_fields["uri"].metadata = []
-for _cls in [mcp.types.ResourceContents, mcp.types.TextResourceContents,
-             mcp.types.BlobResourceContents, mcp.types.EmbeddedResource,
-             mcp.types.CallToolResult]:
+for _cls in (
+    mcp.types.ResourceContents,
+    mcp.types.TextResourceContents,
+    mcp.types.BlobResourceContents,
+    mcp.types.EmbeddedResource,
+    mcp.types.CallToolResult,
+):
     _cls.model_rebuild(force=True)
 
 
-class ToolboxAuth(httpx.Auth):
-    """httpx Auth that injects a fresh bearer token for the Foundry Toolbox MCP endpoint."""
+class _ResilientResponsesHostServer(ResponsesHostServer):
+    """Defensively wrap ``context.get_history`` so a transient failure
+    degrades to "no prior turns" instead of failing the whole request.
 
-    def __init__(self, token_provider) -> None:
-        self._token_provider = token_provider
+    Note: the parent method is ``_handle_inner`` (not ``_handle_inner_agent``
+    as some older samples suggest); overriding the wrong name silently
+    no-ops the workaround.
+    """
+
+    async def _handle_inner(self, request, context, cancellation_signal):  # type: ignore[override]
+        original_get_history = context.get_history
+
+        async def safe_get_history():
+            try:
+                return await original_get_history()
+            except Exception as ex:  # noqa: BLE001
+                logger.warning(
+                    "context.get_history() failed (%s); proceeding with no prior history.",
+                    ex,
+                )
+                return []
+
+        context.get_history = safe_get_history  # type: ignore[method-assign]
+        async for item in super()._handle_inner(request, context, cancellation_signal):
+            yield item
+
+
+class ToolboxAuth(httpx.Auth):
+    """Injects a fresh bearer token on every request."""
+
+    def __init__(self, token_provider):
+        self._get_token = token_provider
 
     def auth_flow(self, request):
-        """Add Authorization header with a fresh token on every request."""
-        request.headers["Authorization"] = f"Bearer {self._token_provider()}"
+        request.headers["Authorization"] = f"Bearer {self._get_token()}"
         yield request
+
+
+def resolve_toolbox_endpoint() -> str:
+    """Resolve the toolbox MCP endpoint URL from project endpoint + name."""
+    project_endpoint = os.environ["FOUNDRY_PROJECT_ENDPOINT"].rstrip("/")
+    toolbox_name = os.environ["TOOLBOX_NAME"]
+    return f"{project_endpoint}/toolboxes/{toolbox_name}/mcp?api-version=v1"
 
 
 def _load_system_prompt() -> str:
     if SYSTEM_PROMPT_PATH.exists():
-        return SYSTEM_PROMPT_PATH.read_text()
+        return SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
     return "You are Fibey, a helpful AI assistant for fiber optics field operations."
+
+
+async def _build_skills_provider(token_provider) -> SkillsProvider | None:
+    """Load skills published by the Foundry Toolbox via MCP resources/list."""
+    try:
+        toolbox_url = resolve_toolbox_endpoint()
+        source = MCPSkillsSource(
+            url=toolbox_url,
+            httpx_auth=ToolboxAuth(token_provider),
+            extra_headers={"Foundry-Features": "Toolboxes=V1Preview"},
+        )
+        skills = await source.get_skills()
+        if skills:
+            logger.info("Loaded %d skill(s) from toolbox", len(skills))
+            return SkillsProvider(InMemorySkillsSource(skills))
+        logger.warning("Toolbox returned no skills; running without skills")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to load MCP skills (%s); running without skills", exc)
+    return None
 
 
 def main() -> None:
     """Start the hosted agent server."""
-    user_mi = ManagedIdentityCredential(client_id=os.getenv("AZURE_CLIENT_ID"))
-    azd_cli = AzureDeveloperCliCredential(
-        tenant_id=os.getenv("AZURE_TENANT_ID"), process_timeout=60
-    )
-    credential = ChainedTokenCredential(user_mi, azd_cli)
+    # Enable OpenTelemetry instrumentation. Foundry hosting auto-injects the
+    # OTLP exporter env vars so traces flow to the project's Application
+    # Insights and show up in the portal's Tracing tab. Also enables MAF's
+    # span emission around chat/tool/skill operations, which is essential for
+    # diagnosing a "stream never completes" hang.
+    try:
+        configure_otel_providers(enable_sensitive_data=True)
+        logger.info("OpenTelemetry instrumentation enabled")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to configure OTEL providers: %s", exc)
 
-    model = os.environ.get("AZURE_AI_MODEL_DEPLOYMENT_NAME") or os.environ.get("FOUNDRY_MODEL")
+    credential = DefaultAzureCredential()
+    token_provider = get_bearer_token_provider(
+        credential, "https://ai.azure.com/.default"
+    )
+
     project_endpoint = os.environ["FOUNDRY_PROJECT_ENDPOINT"]
-    logger.info("Model: %s | Endpoint: %s", model, project_endpoint[:60])
+    model = os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"]
+    toolbox_url = resolve_toolbox_endpoint()
+    logger.info("Model: %s | Project: %s", model, project_endpoint[:60])
+    logger.info("Toolbox MCP URL: %s", toolbox_url)
+
+    http_client = httpx.AsyncClient(
+        auth=ToolboxAuth(token_provider),
+        headers={"Foundry-Features": "Toolboxes=V1Preview"},
+        timeout=120.0,
+    )
+
+    toolbox = MCPStreamableHTTPTool(
+        name=os.environ["TOOLBOX_NAME"],
+        url=toolbox_url,
+        http_client=http_client,
+        load_prompts=False,
+    )
 
     client = FoundryChatClient(
         project_endpoint=project_endpoint,
@@ -95,51 +174,20 @@ def main() -> None:
         credential=credential,
     )
 
-    # --- Toolbox MCP Tool ---
-    tools: list = []
-    toolbox_url = os.environ.get("TOOLBOX_MCP_URL", "")
-    if toolbox_url:
-        logger.info("Registering Toolbox MCP: %s", toolbox_url[:80])
-        token_provider = get_bearer_token_provider(
-            credential, "https://ai.azure.com/.default"
-        )
-        toolbox_http_client = httpx.AsyncClient(
-            auth=ToolboxAuth(token_provider),
-            headers={"Foundry-Features": "Toolboxes=V1Preview"},
-            timeout=120.0,
-        )
-        toolbox_mcp_tool = MCPStreamableHTTPTool(
-            name="toolbox",
-            url=toolbox_url,
-            http_client=toolbox_http_client,
-            load_prompts=False,
-        )
-        tools.append(toolbox_mcp_tool)
-        logger.info("Toolbox MCP registered successfully")
-    else:
-        logger.warning("TOOLBOX_MCP_URL not set — agent will have no tools")
-
-    # --- Skills ---
-    skills_provider = None
-    if SKILLS_DIR.is_dir():
-        try:
-            skills_provider = SkillsProvider.from_paths(
-                skill_paths=str(SKILLS_DIR),
-            )
-            logger.info("Loaded skills from %s", SKILLS_DIR)
-        except Exception as exc:
-            logger.warning("Failed to load skills: %s", exc, exc_info=True)
+    # Pre-load skills synchronously at startup so they are ready for the
+    # first request (avoids cold-start latency on the readiness probe path).
+    skills_provider = asyncio.run(_build_skills_provider(token_provider))
 
     agent = Agent(
         client=client,
         name="fibey",
         instructions=_load_system_prompt(),
-        tools=tools,
+        tools=toolbox,
         context_providers=[skills_provider] if skills_provider else None,
         default_options={"store": False},
     )
 
-    server = ResponsesHostServer(agent)
+    server = _ResilientResponsesHostServer(agent)
     server.run()
 
 
