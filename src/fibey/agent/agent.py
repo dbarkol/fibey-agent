@@ -3,14 +3,30 @@ Single agent definition with Foundry Toolbox MCP connection.
 
 The agent calls the Toolbox as one MCP endpoint; the Toolbox dispatches
 to individual tools (FoundryIQ, Work Orders OpenAPI, Inventory MCP) behind
-the scenes.  When the Toolbox is configured, FoundryIQ provides knowledge
-base retrieval; otherwise a local Azure AI Search function tool is used
-as a fallback.
+the scenes.
 
-When TOOLBOX_MCP_URL is empty the agent falls back to **local-direct mode**:
-it connects to the inventory MCP server and work-orders API running on
-localhost, bypassing the Toolbox entirely.  Set INVENTORY_MCP_URL and
-WORK_ORDERS_API_URL to override the default localhost URLs.
+## Modes
+
+The agent supports two execution modes selected via ``AGENT_MODE``:
+
+- ``local`` (default) — connect to the Foundry Toolbox MCP endpoint declared
+  by ``TOOLBOX_MCP_URL``. This matches the ``main`` branch behavior.
+- ``local-direct`` — opt-in demo mode that bypasses the Toolbox and connects
+  directly to ``services/inventory-mcp`` (port 8001) and
+  ``services/work-orders-api`` (port 8002) on localhost. Useful when the
+  Toolbox is unavailable. Set ``INVENTORY_MCP_URL`` / ``WORK_ORDERS_API_URL``
+  to override default URLs.
+
+## Optional Content Understanding extensions (additive)
+
+These features are strictly additive — with all CU env vars unset the agent
+behaves the same as ``main``:
+
+- Chat-time CU: enabled when ``AZURE_CONTENTUNDERSTANDING_ENDPOINT`` is set
+  AND ``cu_mode`` argument is ``"basic"`` or ``"work_order"``.
+- Foundry IQ CU demo: enabled when both ``FOUNDRY_IQ_MINIMAL_MCP_URL`` and
+  ``FOUNDRY_IQ_STANDARD_MCP_URL`` are set AND ``foundry_iq_mode`` is
+  ``"minimal"`` or ``"standard"``.
 """
 
 import asyncio
@@ -43,6 +59,7 @@ from agent_framework.foundry import FoundryChatClient
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system_prompt.md"
+SYSTEM_PROMPT_CU_PATH = Path(__file__).parent / "prompts" / "system_prompt_cu.md"
 SKILLS_PATH = Path(__file__).parent / "skills"
 _TOKEN_SCOPE = "https://ai.azure.com/.default"
 
@@ -52,21 +69,42 @@ _SEARCH_INDEX = os.getenv("AZURE_SEARCH_INDEX", "foundry-iq-docs-index")
 # Accept either key; admin key also works for read operations
 _SEARCH_API_KEY = os.getenv("AZURE_SEARCH_API_KEY", "") or os.getenv("AZURE_SEARCH_ADMIN_KEY", "")
 
-# Content Understanding (optional)
+# Agent execution mode: "local" (Toolbox MCP, default) or "local-direct"
+# (bypass Toolbox, connect to localhost inventory/work-orders services).
+# Empty/unset → "local". The "hosted" and "containerapp" modes are selected
+# by the gateway, not by this module.
+_AGENT_MODE = (os.getenv("AGENT_MODE") or "local").strip().lower()
+_LOCAL_DIRECT = _AGENT_MODE == "local-direct"
+
+# Content Understanding (optional, additive)
 _CU_ENDPOINT = os.getenv("AZURE_CONTENTUNDERSTANDING_ENDPOINT", "")
+_CU_ENABLED = bool(_CU_ENDPOINT)
+_CU_VERBOSE_LOGGING = (os.getenv("CU_VERBOSE_LOGGING", "").strip().lower()
+                       in ("1", "true", "yes", "on"))
 
 # Foundry IQ CU demo — two separate KB MCP endpoints (minimal vs standard ingestion)
 _FOUNDRY_IQ_MINIMAL_MCP_URL = os.getenv("FOUNDRY_IQ_MINIMAL_MCP_URL", "")
 _FOUNDRY_IQ_STANDARD_MCP_URL = os.getenv("FOUNDRY_IQ_STANDARD_MCP_URL", "")
+_CU_FOUNDRY_IQ_ENABLED = bool(_FOUNDRY_IQ_MINIMAL_MCP_URL and _FOUNDRY_IQ_STANDARD_MCP_URL)
 
 _SEARCH_TOKEN_SCOPE = "https://search.azure.com/.default"
 
 
-def _load_system_prompt() -> str:
-    """Load the system prompt from markdown file."""
+def _load_system_prompt(cu_active: bool = False) -> str:
+    """Load the system prompt.
+
+    The base prompt is always returned. When ``cu_active`` is true, the
+    CU-specific instructions (document-upload handling, work-order
+    extraction) are appended. This keeps base behavior identical to
+    ``main`` when CU is disabled.
+    """
     if SYSTEM_PROMPT_PATH.exists():
-        return SYSTEM_PROMPT_PATH.read_text()
-    return "You are Fibey, a helpful AI assistant."
+        prompt = SYSTEM_PROMPT_PATH.read_text()
+    else:
+        prompt = "You are Fibey, a helpful AI assistant."
+    if cu_active and SYSTEM_PROMPT_CU_PATH.exists():
+        prompt = prompt.rstrip() + "\n\n" + SYSTEM_PROMPT_CU_PATH.read_text()
+    return prompt
 
 
 def _get_credential():
@@ -409,11 +447,17 @@ _CU_ANALYZER_IDS = {
 
 class _LoggingCUWrapper(ContextProvider):
     """Thin wrapper around ContentUnderstandingContextProvider that logs
-    what the CU provider injects into context before each LLM call."""
+    what the CU provider injects into context before each LLM call.
+
+    Verbose ``logger.info`` output is gated by ``CU_VERBOSE_LOGGING=1``.
+    Otherwise everything drops to ``logger.debug`` to keep production
+    logs clean. Errors are always surfaced as warnings.
+    """
 
     def __init__(self, inner: Any) -> None:
         super().__init__(source_id=getattr(inner, "source_id", "azure_contentunderstanding"))
         self._inner = inner
+        self._log = logger.info if _CU_VERBOSE_LOGGING else logger.debug
 
     async def before_run(
         self,
@@ -425,7 +469,6 @@ class _LoggingCUWrapper(ContextProvider):
     ) -> None:
         logger.debug("[CU] before_run: state keys=%s", list(state.keys()))
 
-        # snapshot message count before CU runs
         msgs_before = list(context.messages) if hasattr(context, "messages") else []
 
         await self._inner.before_run(
@@ -435,7 +478,6 @@ class _LoggingCUWrapper(ContextProvider):
             state=state,
         )
 
-        # log any documents tracked in state
         documents = state.get("documents", {})
         if documents:
             for key, entry in documents.items():
@@ -444,7 +486,7 @@ class _LoggingCUWrapper(ContextProvider):
                 duration = entry.get("analysis_duration_s") if isinstance(entry, dict) else getattr(entry, "analysis_duration_s", None)
                 result = entry.get("result") if isinstance(entry, dict) else getattr(entry, "result", None)
                 error = entry.get("error") if isinstance(entry, dict) else getattr(entry, "error", None)
-                logger.info(
+                self._log(
                     "[CU] document='%s' status=%s analyzer=%s duration=%ss",
                     key, status, analyzer, duration,
                 )
@@ -452,18 +494,16 @@ class _LoggingCUWrapper(ContextProvider):
                     logger.warning("[CU] document='%s' error: %s", key, error)
                 if result:
                     result_str = json.dumps(result) if not isinstance(result, str) else result
-                    # Log a preview (first 500 chars) to avoid flooding logs
-                    logger.info("[CU] document='%s' result preview (500 chars): %s", key, result_str[:500])
+                    self._log("[CU] document='%s' result preview (500 chars): %s", key, result_str[:500])
                     logger.debug("[CU] document='%s' full result: %s", key, result_str)
 
-        # log any new messages CU injected into context
         msgs_after = list(context.messages) if hasattr(context, "messages") else []
         new_msgs = msgs_after[len(msgs_before):]
         if new_msgs:
-            logger.info("[CU] injected %d message(s) into context:", len(new_msgs))
+            self._log("[CU] injected %d message(s) into context:", len(new_msgs))
             for i, msg in enumerate(new_msgs):
                 content_preview = str(msg)[:300]
-                logger.info("[CU]   [%d] %s", i, content_preview)
+                self._log("[CU]   [%d] %s", i, content_preview)
         else:
             logger.debug("[CU] no new messages injected into context")
 
@@ -492,29 +532,45 @@ def create_agent(cu_mode: str = "none", foundry_iq_mode: str | None = None) -> t
     )
 
     tools = []
-    toolbox_mcp = _create_toolbox_mcp(credential)
-    if toolbox_mcp:
-        tools.append(toolbox_mcp)
-    else:
-        # Local-direct mode: connect to individual services
-        logger.info("Local-direct mode: connecting to local services")
+    if _LOCAL_DIRECT:
+        # Explicit local-direct mode: skip Toolbox, connect to localhost services.
+        logger.info("AGENT_MODE=local-direct: connecting to local services")
         tools.append(_create_local_inventory_mcp())
         tools.extend(_create_work_order_tools())
-
-        # Add KB search as fallback if configured
         kb_tool = _create_kb_search_tool()
         if kb_tool:
             tools.append(kb_tool)
+    else:
+        toolbox_mcp = _create_toolbox_mcp(credential)
+        if toolbox_mcp:
+            tools.append(toolbox_mcp)
+        else:
+            # Toolbox not configured — silent local-direct fallback for back
+            # compatibility with environments that simply leave TOOLBOX_MCP_URL
+            # unset. Prefer setting AGENT_MODE=local-direct explicitly.
+            logger.info("TOOLBOX_MCP_URL not set: falling back to local services")
+            tools.append(_create_local_inventory_mcp())
+            tools.extend(_create_work_order_tools())
+            kb_tool = _create_kb_search_tool()
+            if kb_tool:
+                tools.append(kb_tool)
 
     # Foundry IQ CU demo: add the mode-specific KB MCP alongside existing tools.
     # The KB contains indexed field documents (OTDR reports, etc.) — the agent
     # uses live inventory/work-order APIs for operational data AND the KB for
     # document-based queries, which is the realistic production pattern.
     if foundry_iq_mode in ("minimal", "standard"):
-        iq_mcp = _create_foundry_iq_mcp(credential, foundry_iq_mode)
-        if iq_mcp:
-            tools.append(iq_mcp)
-            logger.info("Foundry IQ CU demo KB added: mode=%s", foundry_iq_mode)
+        if not _CU_FOUNDRY_IQ_ENABLED:
+            logger.warning(
+                "foundry_iq_mode=%s requested but FOUNDRY_IQ_MINIMAL_MCP_URL / "
+                "FOUNDRY_IQ_STANDARD_MCP_URL not configured — skipping IQ KB",
+                foundry_iq_mode,
+            )
+        else:
+            iq_mcp = _create_foundry_iq_mcp(credential, foundry_iq_mode)
+            if iq_mcp:
+                tools.append(iq_mcp)
+                logger.info("Foundry IQ CU demo KB added: mode=%s", foundry_iq_mode)
 
     # Context providers
     context_providers = []
@@ -550,10 +606,13 @@ def create_agent(cu_mode: str = "none", foundry_iq_mode: str | None = None) -> t
         context_providers.append(_LoggingCUWrapper(cu_provider))
         logger.info("[CU] Content Understanding enabled: mode=%s analyzer=%s endpoint=%s", cu_mode, analyzer_id, _CU_ENDPOINT)
 
+    # CU-specific prompt sections are appended only when CU is active.
+    cu_active = bool(analyzer_id and _CU_ENDPOINT)
+
     agent = Agent(
         client=client,
         name="fibey",
-        instructions=_load_system_prompt(),
+        instructions=_load_system_prompt(cu_active=cu_active),
         tools=tools,
         context_providers=context_providers if context_providers else None,
     )
