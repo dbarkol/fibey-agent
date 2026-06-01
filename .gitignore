@@ -445,4 +445,8 @@ dist/
 scripts/gen_work_order_docx.py
 scripts/dev-restart.sh
 scripts/dev-stop.sh
-# content_understanding/demo_files/*.docx  # tracked — needed for demo
+# content-understanding/demo_files/*.docx  # tracked — needed for demo
+
+# Local-only notes (never push)
+*.local.md
+.env.bak

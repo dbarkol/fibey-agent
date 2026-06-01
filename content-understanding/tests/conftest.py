@@ -9,7 +9,7 @@ These tests make real Azure API calls. Requires:
       cu_demo_classify_and_analyze (Step 2)
 
 Run:
-    uv run pytest content_understanding/tests/ -v
+    uv run pytest content-understanding/tests/ -v
 """
 
 import os
@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 _REPO_ROOT = Path(__file__).parent.parent.parent
 load_dotenv(_REPO_ROOT / ".env")
 
-DEMO_FILES = _REPO_ROOT / "content_understanding" / "demo_files"
+DEMO_FILES = _REPO_ROOT / "content-understanding" / "demo_files"
 
 WORK_ORDER_PDF = DEMO_FILES / "work_order_fiber_splice.pdf"
 WORK_ORDER_DOCX = DEMO_FILES / "work_order_fiber_splice.docx"

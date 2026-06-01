@@ -4,7 +4,7 @@ Used to demonstrate the CU 'Classify & Analyze Work Order' mode returning
 near-zero results — this document shares almost no schema overlap with work orders.
 
 Run: uv run python scripts/gen_training_cert_pdf.py
-Output: content_understanding/demo_files/safety_cert_splicing.pdf
+Output: content-understanding/demo_files/safety_cert_splicing.pdf
 """
 
 from pathlib import Path
@@ -18,7 +18,7 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 )
 
-OUTPUT_DIR = Path(__file__).parent.parent / "content_understanding" / "demo_files"
+OUTPUT_DIR = Path(__file__).parent.parent / "content-understanding" / "demo_files"
 OUTPUT_DIR.mkdir(exist_ok=True)
 OUTPUT_PATH = OUTPUT_DIR / "safety_cert_splicing.pdf"
 

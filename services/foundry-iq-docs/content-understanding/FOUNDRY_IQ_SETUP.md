@@ -37,7 +37,7 @@ After switching the **Foundry IQ Ingestion** mode in the sidebar:
 uv run python scripts/gen_cu_demo_docs.py
 ```
 
-This creates the following PDF in `services/foundry-iq-docs/docs/content_understanding_docs/`:
+This creates the following PDF in `services/foundry-iq-docs/docs/content-understanding-docs/`:
 
 - **`otdr-acceptance-results.pdf`** — OTDR acceptance test table with 6 adjacent numeric columns (loss @1310, loss @1550, ORL @1310, ORL @1550) and sparse ORL cells
 

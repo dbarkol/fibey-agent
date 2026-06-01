@@ -18,18 +18,18 @@ This enables the demo progression:
 ## Usage
 
   # Step 1 — create the work order field analyzer (prerequisite):
-  uv run python content_understanding/tools/create_work_order_analyzer.py
+  uv run python content-understanding/tools/create_work_order_analyzer.py
 
   # Step 2 — create this classifier (depends on Step 1):
-  uv run python content_understanding/tools/create_classify_and_analyze.py
+  uv run python content-understanding/tools/create_classify_and_analyze.py
 
   # Analyze a file with the classifier (skip create, use existing):
-  uv run python content_understanding/tools/create_classify_and_analyze.py \\
-      --analyze-only content_understanding/demo_files/work_order_fiber_splice.pdf
+  uv run python content-understanding/tools/create_classify_and_analyze.py \\
+      --analyze-only content-understanding/demo_files/work_order_fiber_splice.pdf
 
   # Create classifier AND analyze a file:
-  uv run python content_understanding/tools/create_classify_and_analyze.py \\
-      --analyze content_understanding/demo_files/work_order_fiber_splice.pdf
+  uv run python content-understanding/tools/create_classify_and_analyze.py \\
+      --analyze content-understanding/demo_files/work_order_fiber_splice.pdf
 
 Environment (loaded from .env at repo root):
     AZURE_CONTENTUNDERSTANDING_ENDPOINT  — required
@@ -86,7 +86,7 @@ def check_work_order_analyzer(client: ContentUnderstandingClient) -> None:
                 "  This classifier routes work order documents to the work order field analyzer,\n"
                 "  which must be created first.\n\n"
                 "  Please run Step 1 first:\n\n"
-                "    uv run python content_understanding/tools/create_work_order_analyzer.py\n\n"
+                "    uv run python content-understanding/tools/create_work_order_analyzer.py\n\n"
                 "  Then re-run this script.",
                 file=sys.stderr,
             )

@@ -138,7 +138,7 @@ sidebar.
 | **Basic CU** | Converts the document to markdown via `prebuilt-layout` and passes it to the LLM |
 | **Classify & Analyze Work Order** | Classifies the document type, then runs a custom field extractor if it's a work order |
 
-**Quick demo sequence** (full walkthrough in [`content_understanding/README.md`](content_understanding/README.md)):
+**Quick demo sequence** (full walkthrough in [`content-understanding/README.md`](content-understanding/README.md)):
 
 1. **None + `.docx`** → OpenAI rejects the file with an error banner — it cannot read Word documents.
 2. **Basic CU + `.docx`** → CU extracts the document and the agent can discuss it. However, the assigned technician comes back *wrong* (Marcus Tran instead of J. Martinez) because the document is deliberately ambiguous — the LLM reads the prominent "Field Technical Contact" label rather than the less obvious "Dispatch Information" row where the real technician is recorded.
@@ -154,11 +154,11 @@ sidebar.
 AZURE_CONTENTUNDERSTANDING_ENDPOINT=https://<your-foundry-resource>.services.ai.azure.com/
 
 # 2. Create CU analyzers (one-time setup)
-uv run python content_understanding/tools/create_work_order_analyzer.py
-uv run python content_understanding/tools/create_classify_and_analyze.py
+uv run python content-understanding/tools/create_work_order_analyzer.py
+uv run python content-understanding/tools/create_classify_and_analyze.py
 ```
 
-Demo files are in `content_understanding/demo_files/`.
+Demo files are in `content-understanding/demo_files/`.
 
 ---
 

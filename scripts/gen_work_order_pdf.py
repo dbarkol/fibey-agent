@@ -15,7 +15,7 @@ from reportlab.platypus import (
 )
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
-OUTPUT_DIR = Path(__file__).parent.parent / "content_understanding" / "demo_files"
+OUTPUT_DIR = Path(__file__).parent.parent / "content-understanding" / "demo_files"
 OUTPUT_DIR.mkdir(exist_ok=True)
 OUTPUT_PATH = OUTPUT_DIR / "work_order_fiber_splice.pdf"
 

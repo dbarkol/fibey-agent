@@ -6,12 +6,12 @@ Purpose: Demo contrast between CU modes:
   - Basic CU            → CU extracts markdown from .docx, agent can read it
   - Classify & Analyze  → CU classifies as work_order, extracts structured fields
 
-Expected JSON: content_understanding/demo_files/work_order_fiber_splice.json
+Expected JSON: content-understanding/demo_files/work_order_fiber_splice.json
 
 Usage:
     uv run python scripts/gen_work_order_docx.py
 
-Output: content_understanding/demo_files/work_order_fiber_splice.docx
+Output: content-understanding/demo_files/work_order_fiber_splice.docx
 """
 
 from pathlib import Path
@@ -23,8 +23,8 @@ from docx.oxml import OxmlElement
 import json
 
 _REPO_ROOT = Path(__file__).parent.parent
-_OUT = _REPO_ROOT / "content_understanding" / "demo_files" / "work_order_fiber_splice.docx"
-_EXPECTED_JSON = _REPO_ROOT / "content_understanding" / "demo_files" / "work_order_fiber_splice.json"
+_OUT = _REPO_ROOT / "content-understanding" / "demo_files" / "work_order_fiber_splice.docx"
+_EXPECTED_JSON = _REPO_ROOT / "content-understanding" / "demo_files" / "work_order_fiber_splice.json"
 
 
 def set_cell_bg(cell, hex_color: str):

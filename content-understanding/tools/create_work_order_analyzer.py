@@ -6,11 +6,11 @@ Work Orders API (WorkOrderCreate model) to extract structured work order data
 from PDFs and images.
 
 Usage:
-    uv run python content_understanding/tools/create_work_order_analyzer.py
+    uv run python content-understanding/tools/create_work_order_analyzer.py
 
     Optionally analyze a file afterwards:
-    uv run python content_understanding/tools/create_work_order_analyzer.py \
-        --analyze content_understanding/demo_files/work_order_fiber_splice.pdf
+    uv run python content-understanding/tools/create_work_order_analyzer.py \
+        --analyze content-understanding/demo_files/work_order_fiber_splice.pdf
 
 Environment (loaded from .env at repo root):
     AZURE_CONTENTUNDERSTANDING_ENDPOINT  — required
@@ -79,16 +79,18 @@ FIELD_SCHEMA = ContentFieldSchema(
             type=ContentFieldType.STRING,
             method=GenerationMethod.EXTRACT,
             description=(
-                "The name of the field technician dispatched and assigned to perform the work. "
-                "IMPORTANT: Search the entire document for the exact text 'Route \u2192' or 'Route ->'. "
-                "The assigned technician name appears immediately after this text. "
-                "Example: 'Route \u2192 J. Martinez' means the assigned technician is 'J. Martinez'. "
-                "This text appears in a Dispatch Log entry — it may be plain text or inside a table cell. "
-                "You MUST use this as the ONLY authoritative source regardless of any other fields in the document. "
-                "Do NOT use ANY field labeled 'Field Technician' in the document header — "
-                "that is the on-site contact the dispatched technician will meet, not the dispatched worker. "
-                "Do NOT use the Dispatcher name (the person listed before the 'Route \u2192' entry). "
-                "Do NOT use names from the 'Site Access & Contact' or 'Contact:' sections."
+                "The full name of the field technician who has been dispatched and is "
+                "assigned to perform the work on-site. "
+                "Look for explicit dispatch or assignment indicators such as a "
+                "'Dispatch Log' entry, a 'Route' or routing arrow that points to a "
+                "person's name, or any field clearly labelled 'Assigned To', "
+                "'Dispatched To', 'Technician (Assigned)', or similar. "
+                "Prefer the person identified by an explicit dispatch/assignment "
+                "indicator over any other name in the document. "
+                "Do NOT return the dispatcher (the person sending the assignment), "
+                "the on-site customer or facility contact, or anyone listed only "
+                "in 'Site Access', 'Contact', or document header metadata fields. "
+                "Return the name exactly as written, without titles or honorifics."
             ),
         ),
         "location": ContentFieldDefinition(

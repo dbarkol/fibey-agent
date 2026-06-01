@@ -36,7 +36,7 @@ The demo uses two CU analyzers. Create them once before demoing.
 ### Step 1 — Work Order Field Analyzer
 
 ```bash
-uv run python content_understanding/tools/create_work_order_analyzer.py
+uv run python content-understanding/tools/create_work_order_analyzer.py
 ```
 
 Creates `cu_demo_work_order`: extracts structured fields from work order documents
@@ -46,12 +46,12 @@ parts_needed) aligned to the Fibey Work Orders API schema.
 **Options:**
 ```bash
 # Create and immediately test against the demo PDF:
-uv run python content_understanding/tools/create_work_order_analyzer.py \
-    --analyze content_understanding/demo_files/work_order_fiber_splice.pdf
+uv run python content-understanding/tools/create_work_order_analyzer.py \
+    --analyze content-understanding/demo_files/work_order_fiber_splice.pdf
 
 # Test against an existing analyzer without recreating:
-uv run python content_understanding/tools/create_work_order_analyzer.py \
-    --analyze-only content_understanding/demo_files/work_order_scanned.png
+uv run python content-understanding/tools/create_work_order_analyzer.py \
+    --analyze-only content-understanding/demo_files/work_order_scanned.png
 ```
 
 ### Step 2 — Classify & Analyze Classifier
@@ -59,7 +59,7 @@ uv run python content_understanding/tools/create_work_order_analyzer.py \
 > **Requires Step 1 to be completed first.**
 
 ```bash
-uv run python content_understanding/tools/create_classify_and_analyze.py
+uv run python content-understanding/tools/create_classify_and_analyze.py
 ```
 
 Creates `cu_demo_classify_and_analyze`: classifies an uploaded document and routes it
@@ -73,12 +73,12 @@ to the appropriate analyzer.
 **Options:**
 ```bash
 # Create and test against the work order PDF:
-uv run python content_understanding/tools/create_classify_and_analyze.py \
-    --analyze content_understanding/demo_files/work_order_fiber_splice.pdf
+uv run python content-understanding/tools/create_classify_and_analyze.py \
+    --analyze content-understanding/demo_files/work_order_fiber_splice.pdf
 
 # Test against an existing classifier without recreating:
-uv run python content_understanding/tools/create_classify_and_analyze.py \
-    --analyze-only content_understanding/demo_files/safety_cert_splicing.pdf
+uv run python content-understanding/tools/create_classify_and_analyze.py \
+    --analyze-only content-understanding/demo_files/safety_cert_splicing.pdf
 ```
 
 ---
@@ -207,7 +207,7 @@ paper work order on-site.
 ## Running the Tests
 
 ```bash
-uv run pytest content_understanding/tests/ -v
+uv run pytest content-understanding/tests/ -v
 ```
 
 30 tests covering all three document types and both analyzers.
