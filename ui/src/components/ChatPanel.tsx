@@ -9,9 +9,10 @@ interface ChatPanelProps {
   isStreaming: boolean;
   onSend: (text: string, attachments?: FileAttachment[]) => void;
   enableAttachments?: boolean;
+  enableFoundryIqCuDemo?: boolean;
 }
 
-export default function ChatPanel({ messages, isStreaming, onSend, enableAttachments }: ChatPanelProps) {
+export default function ChatPanel({ messages, isStreaming, onSend, enableAttachments, enableFoundryIqCuDemo }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,7 +34,10 @@ export default function ChatPanel({ messages, isStreaming, onSend, enableAttachm
               </p>
             </div>
             <div className="mt-8 w-full max-w-2xl">
-              <PromptSuggestions onSelect={onSend} />
+              <PromptSuggestions
+                onSelect={onSend}
+                showCuSuggestion={Boolean(enableFoundryIqCuDemo)}
+              />
             </div>
           </div>
         ) : (

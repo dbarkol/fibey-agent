@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useChat } from "./hooks/useChat";
 import { useTheme } from "./hooks/useTheme";
-import { fetchFeatures, type CuMode, type FoundryIqMode } from "./api/client";
+import { type CuMode, type FoundryIqMode } from "./api/client";
 import ChatPanel from "./components/ChatPanel";
 import ActivitySidebar from "./components/ActivitySidebar";
 
@@ -88,6 +88,7 @@ export default function App() {
           isStreaming={isStreaming}
           onSend={handleSend}
           enableAttachments={enableAttachments}
+          enableFoundryIqCuDemo={enableFoundryIqCuDemo}
         />
         {sidebarOpen && (
           <ActivitySidebar

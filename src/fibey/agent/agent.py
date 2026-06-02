@@ -526,6 +526,7 @@ def create_agent(cu_mode: str = "none", foundry_iq_mode: str | None = None) -> t
       "standard"  — Azure Content Understanding KB (contentExtractionMode: standard)
     """
     credential = _get_credential()
+    use_foundry_iq_demo = foundry_iq_mode in ("minimal", "standard")
 
     client = FoundryChatClient(
         credential=credential,
@@ -537,9 +538,12 @@ def create_agent(cu_mode: str = "none", foundry_iq_mode: str | None = None) -> t
         logger.info("AGENT_MODE=local-direct: connecting to local services")
         tools.append(_create_local_inventory_mcp())
         tools.extend(_create_work_order_tools())
-        kb_tool = _create_kb_search_tool()
-        if kb_tool:
-            tools.append(kb_tool)
+        # In Foundry IQ demo mode, use the mode-specific KB MCP endpoint only.
+        # Keeping the local fallback KB tool active creates routing ambiguity.
+        if not use_foundry_iq_demo:
+            kb_tool = _create_kb_search_tool()
+            if kb_tool:
+                tools.append(kb_tool)
     else:
         toolbox_mcp = _create_toolbox_mcp(credential)
         if toolbox_mcp:
@@ -551,9 +555,10 @@ def create_agent(cu_mode: str = "none", foundry_iq_mode: str | None = None) -> t
             logger.info("TOOLBOX_MCP_URL not set: falling back to local services")
             tools.append(_create_local_inventory_mcp())
             tools.extend(_create_work_order_tools())
-            kb_tool = _create_kb_search_tool()
-            if kb_tool:
-                tools.append(kb_tool)
+            if not use_foundry_iq_demo:
+                kb_tool = _create_kb_search_tool()
+                if kb_tool:
+                    tools.append(kb_tool)
 
     # Foundry IQ CU demo: add the mode-specific KB MCP alongside existing tools.
     # The KB contains indexed field documents (OTDR reports, etc.) — the agent

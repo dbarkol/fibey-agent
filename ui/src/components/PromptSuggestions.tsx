@@ -1,9 +1,9 @@
 interface Suggestion {
   prompt: string;
-  tags: { label: string; color: "red" | "green" | "yellow" }[];
+  tags: { label: string; color: "red" | "green" | "yellow" | "blue" }[];
 }
 
-const suggestions: Suggestion[] = [
+const baseSuggestions: Suggestion[] = [
   {
     prompt: "Pull up work order WO-003 and tell me what parts are needed.",
     tags: [
@@ -55,18 +55,32 @@ const suggestions: Suggestion[] = [
   },
 ];
 
+const cuSuggestion: Suggestion = {
+  prompt: "Check the KB — what is the ORL reading at 1310nm for fiber F-03?",
+  tags: [
+    { label: "content-understanding", color: "blue" },
+    { label: "FoundryIQ", color: "green" },
+  ],
+};
+
 const tagColors = {
   red: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   green: "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300",
+  blue: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200",
   yellow:
     "bg-yellow-50 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300",
 };
 
 interface PromptSuggestionsProps {
   onSelect: (prompt: string) => void;
+  showCuSuggestion?: boolean;
 }
 
-export default function PromptSuggestions({ onSelect }: PromptSuggestionsProps) {
+export default function PromptSuggestions({ onSelect, showCuSuggestion = false }: PromptSuggestionsProps) {
+  const suggestions = showCuSuggestion
+    ? [cuSuggestion, ...baseSuggestions]
+    : baseSuggestions;
+
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {suggestions.map((s, i) => (

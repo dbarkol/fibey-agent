@@ -109,7 +109,7 @@ export async function sendMessage(
               callbacks.onDelta((data["content"] as string) ?? "");
               break;
             case "warning":
-              callbacks.onWarning(data["content"] ?? "");
+              callbacks.onWarning(String(data["content"] ?? ""));
               break;
             case "activity":
               callbacks.onActivity({
