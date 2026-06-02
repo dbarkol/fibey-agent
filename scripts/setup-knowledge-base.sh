@@ -1,11 +1,88 @@
 #!/usr/bin/env bash
 # Upload FoundryIQ docs to blob storage and configure the full AI Search + FoundryIQ pipeline.
-# Usage: ./scripts/setup-knowledge-base.sh [foundry-resource-group] [foundry-account-name] [foundry-project-name]
+# Usage:
+#   ./scripts/setup-knowledge-base.sh [foundry-resource-group] [foundry-account-name] [foundry-project-name]
+#   ./scripts/setup-knowledge-base.sh --cu-demo [foundry-resource-group] [foundry-account-name] [foundry-project-name]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOCS_DIR="$REPO_ROOT/services/foundry-iq-docs/docs"
+CU_DOCS_DIR="$REPO_ROOT/services/foundry-iq-docs/content-understanding/docs"
+ENV_FILE="$REPO_ROOT/.env"
+
+upsert_env_var() {
+  local key="$1"
+  local value="$2"
+  local file_path="$3"
+  local escaped_value
+
+  escaped_value="${value//\\/\\\\}"
+  escaped_value="${escaped_value//&/\\&}"
+
+  if grep -qE "^${key}=" "$file_path"; then
+    sed -i.bak "s|^${key}=.*|${key}=${escaped_value}|" "$file_path"
+    rm -f "$file_path.bak"
+  else
+    printf "\n%s=%s\n" "$key" "$value" >> "$file_path"
+  fi
+}
+
+ensure_env_file() {
+  if [ ! -f "$ENV_FILE" ] && [ -f "$REPO_ROOT/.env.example" ]; then
+    cp "$REPO_ROOT/.env.example" "$ENV_FILE"
+    echo "Created .env from .env.example"
+  fi
+}
+
+resolve_cu_key_from_endpoint() {
+  local endpoint="$1"
+  local normalized_endpoint
+  local account_line
+  local account_name
+  local account_rg
+  local resolved_key
+
+  normalized_endpoint="${endpoint%/}/"
+  account_line=$(az cognitiveservices account list \
+    --query "[?properties.endpoint=='${normalized_endpoint}'] | [0] | [name,resourceGroup]" \
+    -o tsv 2>/dev/null || true)
+
+  if [ -z "$account_line" ]; then
+    return 1
+  fi
+
+  account_name=$(printf "%s" "$account_line" | awk '{print $1}')
+  account_rg=$(printf "%s" "$account_line" | awk '{print $2}')
+
+  if [ -z "$account_name" ] || [ -z "$account_rg" ]; then
+    return 1
+  fi
+
+  resolved_key=$(az cognitiveservices account keys list \
+    --name "$account_name" \
+    --resource-group "$account_rg" \
+    --query key1 -o tsv 2>/dev/null || true)
+
+  if [ -z "$resolved_key" ]; then
+    return 1
+  fi
+
+  printf "%s" "$resolved_key"
+}
+
+USE_CU_DEMO=false
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  echo "Usage:"
+  echo "  ./scripts/setup-knowledge-base.sh [foundry-resource-group] [foundry-account-name] [foundry-project-name]"
+  echo "  ./scripts/setup-knowledge-base.sh --cu-demo [foundry-resource-group] [foundry-account-name] [foundry-project-name]"
+  exit 0
+fi
+
+if [[ "${1:-}" == "--cu-demo" ]]; then
+  USE_CU_DEMO=true
+  shift
+fi
 
 CONTAINER_NAME="foundry-iq-docs"
 INDEX_NAME="foundry-iq-docs-index"
@@ -48,7 +125,7 @@ if [ -z "$STORAGE_ACCOUNT" ] || [ -z "$SEARCH_SERVICE" ]; then
 fi
 
 SEARCH_RESOURCE_ID=$(az search service show \
-  --service-name "$SEARCH_SERVICE" \
+  --name "$SEARCH_SERVICE" \
   --resource-group "${AZURE_RESOURCE_GROUP}" \
   --query id -o tsv)
 
@@ -112,6 +189,26 @@ MANAGEMENT_TOKEN=$(az account get-access-token \
   --scope https://management.azure.com/.default \
   --query accessToken -o tsv)
 
+CU_ENDPOINT="${AZURE_CONTENTUNDERSTANDING_ENDPOINT:-}"
+CU_KEY="${AZURE_CONTENTUNDERSTANDING_KEY:-}"
+
+if [[ "$USE_CU_DEMO" == "true" ]] && [ -n "$CU_ENDPOINT" ] && [ -z "$CU_KEY" ]; then
+  echo "Attempting to resolve AZURE_CONTENTUNDERSTANDING_KEY from Azure (az login context)..."
+  if RESOLVED_CU_KEY=$(resolve_cu_key_from_endpoint "$CU_ENDPOINT"); then
+    CU_KEY="$RESOLVED_CU_KEY"
+    echo "✓ Resolved CU key from AI Services account"
+    ensure_env_file
+    if [ -f "$ENV_FILE" ]; then
+      upsert_env_var "AZURE_CONTENTUNDERSTANDING_ENDPOINT" "$CU_ENDPOINT" "$ENV_FILE"
+      upsert_env_var "AZURE_CONTENTUNDERSTANDING_KEY" "$CU_KEY" "$ENV_FILE"
+      echo "✓ Updated AZURE_CONTENTUNDERSTANDING_ENDPOINT and AZURE_CONTENTUNDERSTANDING_KEY in .env"
+    fi
+  else
+    echo "⚠ Could not auto-resolve AZURE_CONTENTUNDERSTANDING_KEY from endpoint: $CU_ENDPOINT"
+    echo "  Provide AZURE_CONTENTUNDERSTANDING_KEY manually if standard mode needs key-based auth."
+  fi
+fi
+
 echo ""
 echo "Storage Account       : $STORAGE_ACCOUNT"
 echo "Search Service        : $SEARCH_SERVICE"
@@ -119,7 +216,183 @@ echo "Search Endpoint       : $SEARCH_ENDPOINT"
 echo "Foundry Resource Group: $FOUNDRY_RESOURCE_GROUP"
 echo "Foundry Account       : $FOUNDRY_ACCOUNT_NAME"
 echo "Foundry Project       : $FOUNDRY_PROJECT_NAME"
+if [[ "$USE_CU_DEMO" == "true" ]]; then
+  echo "CU Endpoint           : ${CU_ENDPOINT:-<not set — standard mode uses default AI services>}"
+fi
 echo ""
+
+if [[ "$USE_CU_DEMO" == "true" ]]; then
+  CU_CONTAINER_NAME="foundry-iq-cu-demo"
+  MINIMAL_KS_NAME="fibey-iq-minimal-ks"
+  MINIMAL_KB_NAME="fibey-iq-minimal-kb"
+  MINIMAL_CONNECTION_NAME="kb-fibey-iq-minimal"
+  STANDARD_KS_NAME="fibey-iq-standard-ks"
+  STANDARD_KB_NAME="fibey-iq-standard-kb"
+  STANDARD_CONNECTION_NAME="kb-fibey-iq-standard"
+
+  if { [ ! -d "$DOCS_DIR" ] || [ -z "$(ls -A "$DOCS_DIR" 2>/dev/null)" ]; }; then
+    echo "ERROR: No base FoundryIQ docs found in $DOCS_DIR"
+    exit 1
+  fi
+
+  if { [ ! -d "$CU_DOCS_DIR" ] || [ -z "$(ls -A "$CU_DOCS_DIR" 2>/dev/null)" ]; }; then
+    echo "ERROR: No CU demo docs found in $CU_DOCS_DIR"
+    exit 1
+  fi
+
+  echo "=== Creating blob container: $CU_CONTAINER_NAME ==="
+  az storage container create \
+    --name "$CU_CONTAINER_NAME" \
+    --account-name "$STORAGE_ACCOUNT" \
+    --auth-mode key \
+    --only-show-errors 2>&1 | grep -v "^$" || true
+  sleep 5
+
+  echo ""
+  echo "=== Uploading CU + base knowledge documents ==="
+  az storage blob upload-batch \
+    --source "$DOCS_DIR" \
+    --destination "$CU_CONTAINER_NAME" \
+    --account-name "$STORAGE_ACCOUNT" \
+    --auth-mode key \
+    --overwrite \
+    --no-progress
+
+  az storage blob upload-batch \
+    --source "$CU_DOCS_DIR" \
+    --destination "$CU_CONTAINER_NAME" \
+    --account-name "$STORAGE_ACCOUNT" \
+    --auth-mode key \
+    --overwrite \
+    --no-progress
+
+  BASE_DOC_COUNT=$(find "$DOCS_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')
+  CU_DOC_COUNT=$(find "$CU_DOCS_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')
+  TOTAL_DOC_COUNT=$((BASE_DOC_COUNT + CU_DOC_COUNT))
+  echo "✓ Uploaded $TOTAL_DOC_COUNT document(s)"
+
+  create_cu_knowledge_source() {
+    local ks_name="$1"
+    local extraction_mode="$2"
+
+    if [ "$extraction_mode" = "standard" ] && [ -n "$CU_ENDPOINT" ]; then
+      if [ -n "$CU_KEY" ]; then
+        AI_SERVICES_BLOCK=", \"aiServices\": { \"uri\": \"${CU_ENDPOINT}\", \"apiKey\": \"${CU_KEY}\" }"
+      else
+        AI_SERVICES_BLOCK=", \"aiServices\": { \"uri\": \"${CU_ENDPOINT}\" }"
+      fi
+    else
+      AI_SERVICES_BLOCK=""
+    fi
+
+    echo ""
+    echo "=== Creating knowledge source: $ks_name (mode: $extraction_mode) ==="
+    curl --fail-with-body -sS -X PUT "${SEARCH_ENDPOINT}/knowledgesources/${ks_name}?api-version=${KNOWLEDGE_API_VERSION}" \
+      -H "Content-Type: application/json" \
+      -H "api-key: ${SEARCH_ADMIN_KEY}" \
+      -d "{
+        \"name\": \"${ks_name}\",
+        \"kind\": \"azureBlob\",
+        \"description\": \"Foundry IQ CU demo — ${extraction_mode} ingestion mode\",
+        \"azureBlobParameters\": {
+          \"connectionString\": \"${STORAGE_CONNECTION_STRING}\",
+          \"containerName\": \"${CU_CONTAINER_NAME}\",
+          \"ingestionParameters\": {
+            \"contentExtractionMode\": \"${extraction_mode}\"
+            ${AI_SERVICES_BLOCK}
+          }
+        }
+      }" | python3 -m json.tool
+    echo "✓ Knowledge source created"
+  }
+
+  create_cu_knowledge_base() {
+    local kb_name="$1"
+    local ks_name="$2"
+    local description="$3"
+
+    echo ""
+    echo "=== Creating knowledge base: $kb_name ==="
+    curl --fail-with-body -sS -X PUT "${SEARCH_ENDPOINT}/knowledgebases/${kb_name}?api-version=${KNOWLEDGE_API_VERSION}" \
+      -H "Content-Type: application/json" \
+      -H "api-key: ${SEARCH_ADMIN_KEY}" \
+      -d "{
+        \"name\": \"${kb_name}\",
+        \"description\": \"${description}\",
+        \"knowledgeSources\": [{ \"name\": \"${ks_name}\" }]
+      }" | python3 -m json.tool
+    echo "✓ Knowledge base created"
+  }
+
+  create_cu_foundry_connection() {
+    local connection_name="$1"
+    local kb_name="$2"
+    local mcp_endpoint="${SEARCH_ENDPOINT}/knowledgebases/${kb_name}/mcp"
+
+    echo ""
+    echo "=== Creating Foundry connection: $connection_name ==="
+    curl --fail-with-body -sS -X PUT "https://management.azure.com${FOUNDRY_PROJECT_RESOURCE_ID}/connections/${connection_name}?api-version=${FOUNDRY_CONNECTION_API_VERSION}" \
+      -H "Authorization: Bearer ${MANAGEMENT_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"name\": \"${connection_name}\",
+        \"type\": \"Microsoft.MachineLearningServices/workspaces/connections\",
+        \"properties\": {
+          \"authType\": \"ProjectManagedIdentity\",
+          \"category\": \"RemoteTool\",
+          \"target\": \"${mcp_endpoint}\",
+          \"isSharedToAll\": true,
+          \"audience\": \"https://search.azure.com/\",
+          \"metadata\": { \"ApiType\": \"Azure\" }
+        }
+      }" | python3 -m json.tool
+    echo "✓ Foundry connection created"
+  }
+
+  create_cu_knowledge_source "$MINIMAL_KS_NAME" "minimal"
+  create_cu_knowledge_base "$MINIMAL_KB_NAME" "$MINIMAL_KS_NAME" \
+    "Fibey IQ CU demo — minimal mode (standard text extraction, free tier)"
+
+  create_cu_knowledge_source "$STANDARD_KS_NAME" "standard"
+  create_cu_knowledge_base "$STANDARD_KB_NAME" "$STANDARD_KS_NAME" \
+    "Fibey IQ CU demo — standard mode (Azure Content Understanding, advanced table parsing)"
+
+  create_cu_foundry_connection "$MINIMAL_CONNECTION_NAME" "$MINIMAL_KB_NAME"
+  create_cu_foundry_connection "$STANDARD_CONNECTION_NAME" "$STANDARD_KB_NAME"
+
+  echo ""
+  echo "=== Assigning Search Index Data Reader RBAC ==="
+  EXISTING_ASSIGNMENT=$(az role assignment list \
+    --assignee-object-id "$FOUNDRY_MI_PRINCIPAL_ID" \
+    --scope "$SEARCH_RESOURCE_ID" \
+    --query "[?roleDefinitionId=='${ROLE_DEFINITION_ID}'].id | [0]" \
+    -o tsv)
+
+  if [ -n "$EXISTING_ASSIGNMENT" ]; then
+    echo "✓ Search Index Data Reader already assigned"
+  else
+    az role assignment create \
+      --assignee-object-id "$FOUNDRY_MI_PRINCIPAL_ID" \
+      --assignee-principal-type ServicePrincipal \
+      --role "$SEARCH_INDEX_DATA_READER_ROLE_ID" \
+      --scope "$SEARCH_RESOURCE_ID" \
+      --only-show-errors >/dev/null
+    echo "✓ Search Index Data Reader assigned"
+  fi
+
+  MINIMAL_MCP="${SEARCH_ENDPOINT}/knowledgebases/${MINIMAL_KB_NAME}/mcp"
+  STANDARD_MCP="${SEARCH_ENDPOINT}/knowledgebases/${STANDARD_KB_NAME}/mcp"
+
+  echo ""
+  echo "=== Done (CU Demo) ==="
+  echo "Minimal MCP endpoint : ${MINIMAL_MCP}"
+  echo "Standard MCP endpoint: ${STANDARD_MCP}"
+  echo ""
+  echo "Set these in your environment:"
+  echo "  azd env set FOUNDRY_IQ_MINIMAL_MCP_URL \"${MINIMAL_MCP}\""
+  echo "  azd env set FOUNDRY_IQ_STANDARD_MCP_URL \"${STANDARD_MCP}\""
+  exit 0
+fi
 
 # ─── 1. Upload documents ───────────────────────────────────────────────
 echo "=== Uploading documents to blob storage ==="

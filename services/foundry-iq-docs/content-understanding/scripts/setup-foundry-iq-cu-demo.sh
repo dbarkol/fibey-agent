@@ -29,7 +29,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Script lives at services/foundry-iq-docs/content-understanding/scripts/
 # Repo root is 4 levels up
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../" && pwd)"
-DOCS_DIR="$SCRIPT_DIR/../docs"
+CU_DOCS_DIR="$SCRIPT_DIR/../docs"
+BASE_DOCS_DIR="$REPO_ROOT/services/foundry-iq-docs/docs"
 
 # ── Mode flags ─────────────────────────────────────────────────────────────────
 MODE="setup"
@@ -71,9 +72,13 @@ if [ -z "$FOUNDRY_RESOURCE_GROUP" ] || [ -z "$FOUNDRY_ACCOUNT_NAME" ]; then
   exit 1
 fi
 
-if [[ "$MODE" == "setup" ]] && { [ ! -d "$DOCS_DIR" ] || [ -z "$(ls -A "$DOCS_DIR" 2>/dev/null)" ]; }; then
-  echo "ERROR: No documents found in $DOCS_DIR"
-  echo "       Run 'uv run python scripts/gen_cu_demo_docs.py' first."
+if [[ "$MODE" == "setup" ]] && { [ ! -d "$CU_DOCS_DIR" ] || [ -z "$(ls -A "$CU_DOCS_DIR" 2>/dev/null)" ]; }; then
+  echo "ERROR: No CU demo documents found in $CU_DOCS_DIR"
+  exit 1
+fi
+
+if [[ "$MODE" == "setup" ]] && { [ ! -d "$BASE_DOCS_DIR" ] || [ -z "$(ls -A "$BASE_DOCS_DIR" 2>/dev/null)" ]; }; then
+  echo "ERROR: No base FoundryIQ docs found in $BASE_DOCS_DIR"
   exit 1
 fi
 
@@ -259,17 +264,27 @@ az storage container create \
 sleep 5
 echo "✓ Container ready"
 
-# ─── 2. Upload PDF documents ───────────────────────────────────────────────────
+# ─── 2. Upload CU + base documents ─────────────────────────────────────────────
 echo ""
-echo "=== Uploading demo PDFs ==="
+echo "=== Uploading CU + base knowledge documents ==="
 az storage blob upload-batch \
-  --source "$DOCS_DIR" \
+  --source "$BASE_DOCS_DIR" \
   --destination "$CONTAINER_NAME" \
   --account-name "$STORAGE_ACCOUNT" \
   --auth-mode key \
   --overwrite \
   --no-progress
-DOC_COUNT=$(find "$DOCS_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')
+
+az storage blob upload-batch \
+  --source "$CU_DOCS_DIR" \
+  --destination "$CONTAINER_NAME" \
+  --account-name "$STORAGE_ACCOUNT" \
+  --auth-mode key \
+  --overwrite \
+  --no-progress
+BASE_DOC_COUNT=$(find "$BASE_DOCS_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')
+CU_DOC_COUNT=$(find "$CU_DOCS_DIR" -maxdepth 1 -type f | wc -l | tr -d ' ')
+DOC_COUNT=$((BASE_DOC_COUNT + CU_DOC_COUNT))
 echo "✓ Uploaded $DOC_COUNT document(s)"
 
 # Helper: create knowledge source with contentExtractionMode
