@@ -31,17 +31,21 @@ After switching the **Foundry IQ Ingestion** mode in the sidebar:
 - `azd` CLI installed (optional — used to read output values)
 - `uv` installed (for generating demo PDFs)
 
-## Step 1 — Generate the demo PDF documents
+## Step 1 — Verify demo documents
 
-```bash
-uv run python scripts/gen_cu_demo_docs.py
-```
+The CU demo document is versioned in this repo at:
 
-This creates the following PDF in `services/foundry-iq-docs/docs/content-understanding-docs/`:
+`services/foundry-iq-docs/content-understanding/docs/otdr-acceptance-results.pdf`
+
+Ensure this file exists before setup.
+
+This document contains:
 
 - **`otdr-acceptance-results.pdf`** — OTDR acceptance test table with 6 adjacent numeric columns (loss @1310, loss @1550, ORL @1310, ORL @1550) and sparse ORL cells
 
 ## Step 2 — Run the setup script
+
+Run the KB setup script with `--cu-demo`.
 
 ```bash
 export AZURE_RESOURCE_GROUP="<your-resource-group>"
@@ -52,23 +56,27 @@ export FOUNDRY_ACCOUNT_NAME="<your-foundry-account>"
 # export AZURE_CONTENTUNDERSTANDING_ENDPOINT="https://<your-ai-services>.cognitiveservices.azure.com/"
 # export AZURE_CONTENTUNDERSTANDING_KEY="<your-key>"
 
-./scripts/setup-foundry-iq-cu-demo.sh
+./scripts/setup-knowledge-base.sh --cu-demo
 ```
 
 Or pass the Foundry arguments directly:
 
 ```bash
-./scripts/setup-foundry-iq-cu-demo.sh <foundry-rg> <foundry-account> <foundry-project>
+./scripts/setup-knowledge-base.sh --cu-demo <foundry-rg> <foundry-account> <foundry-project>
 ```
 
 The script will:
 
-1. Create a blob container `foundry-iq-cu-demo` and upload the PDFs
+1. Create a blob container `foundry-iq-cu-demo` and upload both document sets:
+  - Base FoundryIQ docs from `services/foundry-iq-docs/docs/`
+  - CU demo docs from `services/foundry-iq-docs/content-understanding/docs/`
 2. Create knowledge source `fibey-iq-minimal-ks` with `contentExtractionMode: minimal`
 3. Create knowledge source `fibey-iq-standard-ks` with `contentExtractionMode: standard`
 4. Create knowledge bases `fibey-iq-minimal-kb` and `fibey-iq-standard-kb`
 5. Create Foundry connections `kb-fibey-iq-minimal` and `kb-fibey-iq-standard`
 6. Assign Search Index Data Reader RBAC to the Foundry managed identity
+
+This means CU mode keeps the original KB demo scenarios available while adding CU-specific table extraction scenarios.
 
 > **Note:** `contentExtractionMode` cannot be changed after a knowledge source is created. If you need to change it, delete the knowledge source and recreate it.
 

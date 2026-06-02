@@ -20,6 +20,25 @@ This will:
 
 ## Running the main app
 
+### Recommended first run: local-direct (no cloud dependency)
+
+`local-direct` bypasses Foundry Toolbox and connects directly to local
+`inventory-mcp` and `work-orders-api` services.
+
+Start supporting services first (separate terminals):
+
+```bash
+cd services/inventory-mcp && uv sync && uv run python server.py
+cd services/work-orders-api && uv sync && uv run python server.py
+cd services/status-dashboard/public && python -m http.server 8003
+```
+
+Then start gateway + UI:
+
+```bash
+AGENT_MODE=local-direct ./scripts/start-dev.sh
+```
+
 ### Gateway + UI
 
 ```bash
@@ -93,18 +112,28 @@ python -m http.server 8003
 
 The markdown documents under `services/foundry-iq-docs/docs/` are **not** served by the local app. Upload them to blob storage and ingest them into FoundryIQ separately.
 
+For the Content Understanding ingestion demo (minimal vs standard), use the same setup entrypoint with CU mode:
+
+```bash
+./scripts/setup-knowledge-base.sh --cu-demo
+```
+
+Full CU demo instructions are in `services/foundry-iq-docs/content-understanding/FOUNDRY_IQ_SETUP.md`.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env` and configure:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AGENT_MODE` | No | `local` | `local`, `containerapp`, or `hosted` |
+| `AGENT_MODE` | No | `local` | `local`, `local-direct`, `containerapp`, or `hosted` |
 | `FOUNDRY_PROJECT_ENDPOINT` | Hosted/containerapp mode | — | Foundry project endpoint |
 | `FOUNDRY_MODEL` | No | `gpt-4.1-mini` | Model deployment name |
 | `HOSTED_AGENT_NAME` | Hosted mode | `fibey-agent` | Hosted agent name |
 | `CONTAINERAPP_AGENT_URL` | Containerapp mode | — | URL of the deployed agent-service Container App |
 | `TOOLBOX_MCP_URL` | For real toolbox access | — | Foundry Toolbox MCP endpoint (without `api-version` — code appends `?api-version=v1`) |
+| `INVENTORY_MCP_URL` | local-direct mode | `http://localhost:8001` | Local inventory MCP base URL |
+| `WORK_ORDERS_API_URL` | local-direct mode | `http://localhost:8002` | Local work-orders API base URL |
 | `AZURE_SEARCH_ENDPOINT` | For direct KB fallback | — | Azure AI Search endpoint |
 | `AZURE_SEARCH_INDEX` | For direct KB fallback | `foundry-iq-docs-index` | Search index name |
 | `AZURE_SEARCH_API_KEY` | For direct KB fallback | — | Search admin/query key |
@@ -124,6 +153,22 @@ curl -X POST http://localhost:8080/api/sessions/reset \
   -H "Content-Type: application/json" \
   -d '{"session_id": "test-1"}'
 ```
+
+## Minimal local-direct E2E smoke test
+
+```bash
+curl http://localhost:8080/api/health
+curl http://localhost:8080/api/features
+
+curl -N -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"List open work orders and include IDs.","session_id":"local-e2e-1"}'
+```
+
+Expected:
+- `/api/health` returns `"mode":"local-direct"`
+- chat stream shows `activity` events for `load_skill` and `list_work_orders`
+- stream ends with `event: done`
 
 ## Project Structure
 

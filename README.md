@@ -50,16 +50,23 @@ The sample also ships **containerapp** and **hosted** modes — see
 
 # 2) Copy and edit environment variables
 cp .env.example .env
-# At minimum set FOUNDRY_PROJECT_ENDPOINT, FOUNDRY_MODEL, TOOLBOX_MCP_URL
+
+# Fastest no-cloud path (recommended first run): local-direct
+# This bypasses Foundry Toolbox and uses local services on :8001/:8002
+AGENT_MODE=local-direct
 
 # 3) Start the gateway + UI
-./scripts/start-dev.sh
+AGENT_MODE=local-direct ./scripts/start-dev.sh
 
-# 4) (optional) In separate terminals, start the local toolbox backends
+# 4) In separate terminals, start local backends
 cd services/inventory-mcp     && uv sync && uv run python server.py
 cd services/work-orders-api   && uv sync && uv run python server.py
 cd services/status-dashboard/public && python -m http.server 8003
 ```
+
+After this works, you can switch to `AGENT_MODE=local` and set
+`FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_MODEL`, and `TOOLBOX_MCP_URL` to test the
+real Foundry Toolbox path.
 
 Open the UI at <http://localhost:5173>.
 
