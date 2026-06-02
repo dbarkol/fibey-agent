@@ -29,12 +29,19 @@ The knowledge base contains 8 reference documents:
 7. **Network Architecture** — PON, point-to-point, FTTx, distribution, topology
 8. **Troubleshooting Guide** — loss, reflectance, breaks, macro-bends, connector issues
 
+## Tools Used by This Skill
+
+This skill calls the **`knowledge_base`** tool (Foundry-managed Azure AI Search, no prefix).
+
+- Tool name: `knowledge_base`
+- Argument shape: `{"query": "<natural-language question>"}`  (single `query` string — never `search`, `q`, or `question`).
+- Discovery: if `knowledge_base` is not already visible in your tool list, run `tool_search({"query": "knowledge base", "limit": 10})` once. Tools returned by `tool_search` stay callable for the rest of the turn.
+
 ## Step-by-Step Instructions
 
 ### Step 1: Search the Knowledge Base
 
-Use the **knowledge base tool** to search. Make **exactly one** retrieval call with a clear
-query derived from the technician's question.
+Call `knowledge_base` via `call_tool` **exactly once** with a clear query derived from the technician's question.
 
 | Question Pattern | Query to Send |
 |-----------------|---------------|

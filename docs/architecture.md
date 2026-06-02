@@ -168,6 +168,10 @@ data: [DONE]
 Controlled by `AGENT_MODE`:
 
 - **`local`** — the gateway runs the agent in-process for local development.
-- **`hosted`** — the gateway proxies to a Foundry-hosted agent.
+- **`containerapp`** — the gateway proxies (over HTTP/SSE) to a self-hosted
+  agent service running as its own Container App
+  (`src/fibey/agent/service.py`). This is the recommended production mode.
+- **`hosted`** — the gateway proxies to a Foundry-hosted agent
+  (`src/fibey/agent/hosted.py`) managed by the Azure AI Foundry platform.
 
-Both modes keep the same UI behavior and streaming contract.
+All three modes keep the same UI behavior and streaming contract.

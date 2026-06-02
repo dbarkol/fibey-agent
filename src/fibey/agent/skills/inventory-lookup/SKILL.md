@@ -16,17 +16,42 @@ Use this skill when the technician asks about parts, stock, equipment, or availa
 - "What connectors do we carry?"
 - "Check stock for the parts on WO-007"
 
-## Step-by-Step Instructions
+## Tools Used by This Skill
+
+All inventory capabilities live in the Foundry Toolbox under the `inventory` MCP server, so the actual tool names are prefixed `inventory___`.
+
+| Capability | Prefixed tool name |
+|---|---|
+| Free-text part search | `inventory___search_parts` |
+| Browse / filter list | `inventory___list_parts` |
+| Single-part details | `inventory___get_part_details` |
+| Single-part stock | `inventory___check_stock` |
+| Multi-part stock | `inventory___check_stock_batch` |
+
+### Step 0: Discover tools (REQUIRED before first inventory call this turn)
+
+If the inventory tools aren't already visible in your tool list, call `tool_search` **once** with **`limit: 10`**. Use a query made from the technician's own domain terms — the toolbox is indexed with fiber-tech vocabulary so terms like `"OTDR"`, `"splicer"`, `"VFL"`, `"connector"`, `"patch cord"`, `"splice tray"`, `"test equipment"` all match inventory tools directly.
+
+Examples:
+- "OTDR stock?" → `tool_search({"query": "OTDR", "limit": 10})`
+- "do we have SC connectors?" → `tool_search({"query": "SC connector", "limit": 10})`
+- generic "check parts" → `tool_search({"query": "inventory parts stock", "limit": 10})`
+
+Always pass `limit: 10` so all inventory tools surface. The returned tools stay callable for the rest of the turn — do not call `tool_search` again for inventory in this turn.
+
+If `tool_search` returns `"No tools matched"`, fall back to invoking inventory tools directly via `call_tool` with their prefixed names from the table above — the tools exist regardless of search results.
 
 ### Step 1: Choose the Right Tool
 
-| Question Type | Tool to Use | Example |
+| Question Type | Tool (prefixed name) | Example |
 |--------------|-------------|---------|
-| Free-text search ("do we have…", "find…") | `search_parts` | "do we have splice trays?" |
-| Browse by category | `list_parts` with `category` filter | "show all connectors" |
-| Specific part by ID | `get_part_details` with `part_id` | "details on FIB-012" |
-| Stock level for a known part | `check_stock` with `part_id` | "how many FIB-042 in stock?" |
-| Stock levels for multiple parts | `check_stock_batch` with `part_ids` list | "check stock for FIB-003 and FIB-012" |
+| Free-text search ("do we have…", "find…") | `inventory___search_parts` | "do we have splice trays?" |
+| Browse by category | `inventory___list_parts` with `category` filter | "show all connectors" |
+| Specific part by ID | `inventory___get_part_details` with `part_id` | "details on FIB-012" |
+| Stock level for a known part | `inventory___check_stock` with `part_id` | "how many FIB-042 in stock?" |
+| Stock levels for multiple parts | `inventory___check_stock_batch` with `part_ids` list | "check stock for FIB-003 and FIB-012" |
+
+Invoke each tool via `call_tool` with `{"name": "<prefixed_name>", "arguments": {...}}`.
 
 **Categories available:** Connectors, Cables, Splitters, Splice Equipment, Test Equipment
 

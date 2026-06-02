@@ -15,6 +15,11 @@ export interface ChatMessage {
   warning?: string;
 }
 
+export interface ToolSearchResult {
+  name: string;
+  description: string;
+}
+
 export interface ActivityEvent {
   id: string;
   tool: string;
@@ -24,6 +29,7 @@ export interface ActivityEvent {
   timestamp: number;
   args?: string;
   result?: string;
+  results?: ToolSearchResult[];
 }
 
 export interface StreamCallbacks {
@@ -97,26 +103,29 @@ export async function sendMessage(
         }
 
         try {
-          const data = JSON.parse(raw) as Record<string, string>;
+          const data = JSON.parse(raw) as Record<string, unknown>;
           switch (currentEvent) {
             case "delta":
-              callbacks.onDelta(data["content"] ?? "");
+              callbacks.onDelta((data["content"] as string) ?? "");
               break;
             case "warning":
               callbacks.onWarning(data["content"] ?? "");
               break;
             case "activity":
               callbacks.onActivity({
-                tool: data["tool"] ?? "",
-                call_id: data["call_id"],
+                tool: (data["tool"] as string) ?? "",
+                call_id: data["call_id"] as string | undefined,
                 status: (data["status"] ?? "running") as ActivityEvent["status"],
-                detail: data["detail"] ?? "",
-                args: data["args"],
-                result: data["result"],
+                detail: (data["detail"] as string) ?? "",
+                args: data["args"] as string | undefined,
+                result: data["result"] as string | undefined,
+                results: Array.isArray(data["results"])
+                  ? (data["results"] as ToolSearchResult[])
+                  : undefined,
               });
               break;
             case "error":
-              callbacks.onError(data["message"] ?? "Unknown error");
+              callbacks.onError((data["message"] as string) ?? "Unknown error");
               break;
           }
         } catch {

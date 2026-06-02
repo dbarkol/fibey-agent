@@ -16,25 +16,47 @@ This combines work order details, parts availability, and relevant procedures/sa
 - "Full briefing for WO-010"
 - "What should I know before heading to the splice job?"
 
+## Tools Used by This Skill
+
+This skill uses **three** capabilities from the Foundry Toolbox in sequence:
+
+| # | Capability | Prefixed tool name |
+|---|---|---|
+| 1 | Get the work order | `work_orders___get_work_order_work_orders__work_order_id__get` |
+| 2 | Check stock for the parts list | `inventory___check_stock_batch` |
+| 3 | Search procedures & safety | `knowledge_base` |
+
+### Step 0: Discover tools (REQUIRED before first call this turn)
+
+If any of these tools isn't already visible in your tool list, run **one** combined `tool_search` with **`limit: 10`**:
+
+```
+tool_search({"query": "work order parts stock knowledge base", "limit": 10})
+```
+
+**Never** run one search per capability — a single combined query with `limit: 10` returns all needed tools, and they stay callable for the rest of the turn.
+
 ## Step-by-Step Instructions
 
 ### Step 1: Fetch the Work Order
 
-Use the work orders API to get the full work order details.
+Call `work_orders___get_work_order_work_orders__work_order_id__get` via `call_tool` with `{"work_order_id": "WO-XXX"}`.
 Note the job type from the title and description — you'll need this to search
 the knowledge base for relevant procedures.
 
 ### Step 2: Check Parts Availability
 
-Use `check_stock_batch` with all `part_id` values from `parts_needed` in a single call.
+Call `inventory___check_stock_batch` via `call_tool` with `{"part_ids": [<all part_ids>]}` in a single call.
 Do NOT call `check_stock` individually for each part.
 Classify each as ✅ Ready, ⚠️ Partial, or ❌ Unavailable.
 
 ### Step 3: Search the Knowledge Base
 
-Based on the work order's job type, search the knowledge base for relevant procedures and safety protocols.
+Call `knowledge_base` via `call_tool` with `{"query": "<combined query>"}`.
 
-**IMPORTANT: Make exactly ONE knowledge base call** with a combined query that covers both the procedure and safety info. For example:
+Based on the work order's job type, search for relevant procedures **and** safety protocols.
+
+**IMPORTANT: Make exactly ONE `knowledge_base` call** with a combined query that covers both the procedure and safety info. For example:
 _"fusion splice procedure and safety protocols for aerial fiber work"_
 
 Do NOT make separate calls for procedures and safety — combine them into a single query. This is more efficient and avoids redundant lookups.
