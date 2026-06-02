@@ -4,6 +4,8 @@ Fibey Field Ops is a demo for **fiber optics field operations** built with **Azu
 
 This sample also includes an **optional** Content Understanding (CU) extension to show how CU can improve agent quality when enabled. At runtime, CU adds file upload support in the chat flow so documents (for example PDF/image/Word) can be parsed and injected as structured context for Agent Framework orchestration. At indexing time, the Foundry IQ demo supports both `minimal` and `standard` ingestion paths; the `standard` path uses CU-enhanced extraction (especially for OCR and table/field structure), which can improve indexed content fidelity and downstream retrieval quality.
 
+CU setup can be done in two levels depending on your goal: (1) **Agent Framework runtime only**: set `AZURE_CONTENTUNDERSTANDING_ENDPOINT` and use CU modes in the UI for document upload + parsing; (2) **Foundry IQ ingestion comparison**: additionally run `services/foundry-iq-docs/content-understanding/scripts/setup-foundry-iq-cu-demo.sh` and set both `FOUNDRY_IQ_MINIMAL_MCP_URL` and `FOUNDRY_IQ_STANDARD_MCP_URL` to compare minimal vs standard indexing.
+
 ## Architecture
 
 The Fibey agent can run in three deployment modes:
@@ -154,6 +156,8 @@ sidebar.
 
 **Three modes are available:**
 
+These are **runtime UI modes** selected in the Activity sidebar for each request, not `.env` values.
+
 | Mode | What it does |
 |---|---|
 | **None** | Plain OpenAI — no document understanding |
@@ -175,9 +179,11 @@ sidebar.
 # 1. Add to .env
 AZURE_CONTENTUNDERSTANDING_ENDPOINT=https://<your-foundry-resource>.services.ai.azure.com/
 
-# 2. Create CU analyzers (one-time setup)
-uv run python content-understanding/tools/create_work_order_analyzer.py
-uv run python content-understanding/tools/create_classify_and_analyze.py
+# 2. Create CU analyzers and validate with the demo PDF (one-time setup)
+uv run python content-understanding/tools/create_work_order_analyzer.py \
+    --analyze content-understanding/demo_files/work_order_fiber_splice.pdf
+uv run python content-understanding/tools/create_classify_and_analyze.py \
+    --analyze content-understanding/demo_files/work_order_fiber_splice.pdf
 ```
 
 Demo files are in `content-understanding/demo_files/`.
@@ -217,5 +223,4 @@ For detailed deployment instructions, see [docs/deployment.md](docs/deployment.m
 See the `docs/` folder for more detail:
 - `docs/architecture.md`
 - `docs/local-development.md`
-- `docs/integration.md` — CU + Foundry IQ extension flags and additive guarantees
 - `docs/deployment.md`

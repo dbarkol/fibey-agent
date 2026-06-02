@@ -36,7 +36,8 @@ The demo uses two CU analyzers. Create them once before demoing.
 ### Step 1 — Work Order Field Analyzer
 
 ```bash
-uv run python content-understanding/tools/create_work_order_analyzer.py
+uv run python content-understanding/tools/create_work_order_analyzer.py \
+    --analyze content-understanding/demo_files/work_order_fiber_splice.pdf
 ```
 
 Creates `cu_demo_work_order`: extracts structured fields from work order documents
@@ -59,7 +60,8 @@ uv run python content-understanding/tools/create_work_order_analyzer.py \
 > **Requires Step 1 to be completed first.**
 
 ```bash
-uv run python content-understanding/tools/create_classify_and_analyze.py
+uv run python content-understanding/tools/create_classify_and_analyze.py \
+    --analyze content-understanding/demo_files/work_order_fiber_splice.pdf
 ```
 
 Creates `cu_demo_classify_and_analyze`: classifies an uploaded document and routes it
