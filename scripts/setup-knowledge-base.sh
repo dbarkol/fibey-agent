@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Upload FoundryIQ docs to blob storage and configure the full AI Search + FoundryIQ pipeline.
 # Usage:
-#   ./scripts/setup-knowledge-base.sh [foundry-resource-group] [foundry-account-name] [foundry-project-name]
-#   ./scripts/setup-knowledge-base.sh --cu-demo [foundry-resource-group] [foundry-account-name] [foundry-project-name]
+#   ./scripts/setup-knowledge-base.sh [foundry-project-endpoint]
+#   ./scripts/setup-knowledge-base.sh --cu-demo [foundry-project-endpoint]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -74,8 +74,11 @@ resolve_cu_key_from_endpoint() {
 USE_CU_DEMO=false
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   echo "Usage:"
-  echo "  ./scripts/setup-knowledge-base.sh [foundry-resource-group] [foundry-account-name] [foundry-project-name]"
-  echo "  ./scripts/setup-knowledge-base.sh --cu-demo [foundry-resource-group] [foundry-account-name] [foundry-project-name]"
+  echo "  ./scripts/setup-knowledge-base.sh [foundry-project-endpoint]"
+  echo "  ./scripts/setup-knowledge-base.sh --cu-demo [foundry-project-endpoint]"
+  echo ""
+  echo "Required env var (or positional arg):"
+  echo "  FOUNDRY_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project>"
   exit 0
 fi
 
@@ -97,17 +100,26 @@ KNOWLEDGE_API_VERSION="2026-04-01"
 FOUNDRY_CONNECTION_API_VERSION="2025-10-01-preview"
 SEARCH_INDEX_DATA_READER_ROLE_ID="1407120a-92aa-4202-b7e9-c0e197c71c8f"
 
-FOUNDRY_RESOURCE_GROUP="${1:-${FOUNDRY_RESOURCE_GROUP:-}}"
-FOUNDRY_ACCOUNT_NAME="${2:-${FOUNDRY_ACCOUNT_NAME:-}}"
-FOUNDRY_PROJECT_NAME="${3:-${FOUNDRY_PROJECT_NAME:-}}"
+FOUNDRY_PROJECT_ENDPOINT="${1:-${FOUNDRY_PROJECT_ENDPOINT:-}}"
 
 if [ -z "${AZURE_RESOURCE_GROUP:-}" ]; then
   echo "AZURE_RESOURCE_GROUP must be set before running this script."
   exit 1
 fi
 
-if [ -z "$FOUNDRY_PROJECT_NAME" ] && [ -n "${FOUNDRY_PROJECT_ENDPOINT:-}" ]; then
-  FOUNDRY_PROJECT_NAME="${FOUNDRY_PROJECT_ENDPOINT##*/}"
+if [ -z "$FOUNDRY_PROJECT_ENDPOINT" ]; then
+  echo "FOUNDRY_PROJECT_ENDPOINT must be set (or passed as the first argument)."
+  exit 1
+fi
+
+FOUNDRY_PROJECT_ENDPOINT="${FOUNDRY_PROJECT_ENDPOINT%/}"
+FOUNDRY_ACCOUNT_NAME=$(printf "%s" "$FOUNDRY_PROJECT_ENDPOINT" | sed -nE 's#^https?://([^.]+)\.services\.ai\.azure\.com(/.*)?$#\1#p')
+FOUNDRY_PROJECT_NAME=$(printf "%s" "$FOUNDRY_PROJECT_ENDPOINT" | sed -nE 's#^https?://[^/]+/api/projects/([^/?#]+).*$#\1#p')
+
+if [ -z "$FOUNDRY_ACCOUNT_NAME" ] || [ -z "$FOUNDRY_PROJECT_NAME" ]; then
+  echo "Could not parse account/project from FOUNDRY_PROJECT_ENDPOINT: $FOUNDRY_PROJECT_ENDPOINT"
+  echo "Expected format: https://<account>.services.ai.azure.com/api/projects/<project>"
+  exit 1
 fi
 
 # Resolve resource names from azd outputs
@@ -143,28 +155,27 @@ fi
 
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 
-if [ -z "$FOUNDRY_RESOURCE_GROUP" ] || [ -z "$FOUNDRY_ACCOUNT_NAME" ]; then
-  echo "FOUNDRY_RESOURCE_GROUP and FOUNDRY_ACCOUNT_NAME must be set (or passed as the first two arguments)."
-  exit 1
-fi
-
-if [ -n "$FOUNDRY_PROJECT_NAME" ]; then
-  FOUNDRY_PROJECT_RESOURCE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.MachineLearningServices/workspaces/${FOUNDRY_ACCOUNT_NAME}/projects/${FOUNDRY_PROJECT_NAME}"
-else
-  FOUNDRY_PROJECT_RESOURCE_ID=$(az resource list \
-    --resource-group "$FOUNDRY_RESOURCE_GROUP" \
-    --namespace Microsoft.MachineLearningServices \
-    --query "[?type=='Microsoft.MachineLearningServices/workspaces/projects' && contains(id, '/workspaces/${FOUNDRY_ACCOUNT_NAME}/projects/')].id | [0]" \
-    -o tsv)
-fi
+FOUNDRY_PROJECT_RESOURCE_ID=$(az resource list \
+  --query "[?(type=='Microsoft.CognitiveServices/accounts/projects' || type=='Microsoft.MachineLearningServices/workspaces/projects') && (contains(id, '/accounts/${FOUNDRY_ACCOUNT_NAME}/projects/${FOUNDRY_PROJECT_NAME}') || contains(id, '/workspaces/${FOUNDRY_ACCOUNT_NAME}/projects/${FOUNDRY_PROJECT_NAME}'))].id | [0]" \
+  -o tsv)
 
 if [ -z "$FOUNDRY_PROJECT_RESOURCE_ID" ]; then
-  echo "Could not resolve a Foundry project resource ID. Set FOUNDRY_PROJECT_NAME or FOUNDRY_PROJECT_ENDPOINT."
+  echo "Could not resolve a Foundry project resource ID from FOUNDRY_PROJECT_ENDPOINT."
+  echo "Endpoint: $FOUNDRY_PROJECT_ENDPOINT"
   exit 1
 fi
 
-if [ -z "$FOUNDRY_PROJECT_NAME" ]; then
-  FOUNDRY_PROJECT_NAME="${FOUNDRY_PROJECT_RESOURCE_ID##*/}"
+FOUNDRY_RESOURCE_GROUP=$(printf "%s" "$FOUNDRY_PROJECT_RESOURCE_ID" | sed -nE 's#^/subscriptions/[^/]+/resourceGroups/([^/]+)/.*$#\1#p')
+
+if [ -z "$FOUNDRY_RESOURCE_GROUP" ]; then
+  echo "Could not resolve Foundry resource group from project resource ID: $FOUNDRY_PROJECT_RESOURCE_ID"
+  exit 1
+fi
+
+if [[ "$FOUNDRY_PROJECT_RESOURCE_ID" == *"/providers/Microsoft.CognitiveServices/accounts/"* ]]; then
+  FOUNDRY_ACCOUNT_RESOURCE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.CognitiveServices/accounts/${FOUNDRY_ACCOUNT_NAME}"
+else
+  FOUNDRY_ACCOUNT_RESOURCE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.MachineLearningServices/workspaces/${FOUNDRY_ACCOUNT_NAME}"
 fi
 
 FOUNDRY_MI_PRINCIPAL_ID=$(az resource show \
@@ -174,7 +185,7 @@ FOUNDRY_MI_PRINCIPAL_ID=$(az resource show \
 
 if [ -z "$FOUNDRY_MI_PRINCIPAL_ID" ]; then
   FOUNDRY_MI_PRINCIPAL_ID=$(az resource show \
-    --ids "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.MachineLearningServices/workspaces/${FOUNDRY_ACCOUNT_NAME}" \
+    --ids "$FOUNDRY_ACCOUNT_RESOURCE_ID" \
     --api-version "$FOUNDRY_CONNECTION_API_VERSION" \
     --query identity.principalId -o tsv)
 fi
@@ -213,6 +224,7 @@ echo ""
 echo "Storage Account       : $STORAGE_ACCOUNT"
 echo "Search Service        : $SEARCH_SERVICE"
 echo "Search Endpoint       : $SEARCH_ENDPOINT"
+echo "Foundry Endpoint      : $FOUNDRY_PROJECT_ENDPOINT"
 echo "Foundry Resource Group: $FOUNDRY_RESOURCE_GROUP"
 echo "Foundry Account       : $FOUNDRY_ACCOUNT_NAME"
 echo "Foundry Project       : $FOUNDRY_PROJECT_NAME"

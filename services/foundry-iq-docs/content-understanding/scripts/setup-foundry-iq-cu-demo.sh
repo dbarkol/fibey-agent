@@ -4,15 +4,13 @@
 # This enables the side-by-side ingestion quality demo in the Fibey UI.
 #
 # Usage:
-#   ./setup-foundry-iq-cu-demo.sh [foundry-resource-group] [foundry-account-name] [foundry-project-name]
+#   ./setup-foundry-iq-cu-demo.sh [foundry-project-endpoint]
 #   ./setup-foundry-iq-cu-demo.sh --teardown   [args...]   # delete all resources created by this script
 #   ./setup-foundry-iq-cu-demo.sh --recreate   [args...]   # teardown then re-create
 #
 # Required env vars (or pass as positional args):
 #   AZURE_RESOURCE_GROUP    — resource group that contains the search service + storage
-#   FOUNDRY_RESOURCE_GROUP  — resource group that contains the Foundry account
-#   FOUNDRY_ACCOUNT_NAME    — Azure AI Foundry account name
-#   FOUNDRY_PROJECT_NAME    — (optional) Foundry project name; auto-detected if omitted
+#   FOUNDRY_PROJECT_ENDPOINT — https://<account>.services.ai.azure.com/api/projects/<project>
 #
 # Optional env vars:
 #   AZURE_SEARCH_ADMIN_KEY  — search admin key; fetched via az CLI if not set
@@ -58,17 +56,26 @@ FOUNDRY_CONNECTION_API_VERSION="2025-10-01-preview"
 SEARCH_INDEX_DATA_READER_ROLE_ID="1407120a-92aa-4202-b7e9-c0e197c71c8f"
 
 # ── Arguments / env vars ────────────────────────────────────────────────────────
-FOUNDRY_RESOURCE_GROUP="${1:-${FOUNDRY_RESOURCE_GROUP:-}}"
-FOUNDRY_ACCOUNT_NAME="${2:-${FOUNDRY_ACCOUNT_NAME:-}}"
-FOUNDRY_PROJECT_NAME="${3:-${FOUNDRY_PROJECT_NAME:-}}"
+FOUNDRY_PROJECT_ENDPOINT="${1:-${FOUNDRY_PROJECT_ENDPOINT:-}}"
 
 if [ -z "${AZURE_RESOURCE_GROUP:-}" ]; then
   echo "ERROR: AZURE_RESOURCE_GROUP must be set."
   exit 1
 fi
 
-if [ -z "$FOUNDRY_RESOURCE_GROUP" ] || [ -z "$FOUNDRY_ACCOUNT_NAME" ]; then
-  echo "ERROR: FOUNDRY_RESOURCE_GROUP and FOUNDRY_ACCOUNT_NAME must be set (or passed as arguments)."
+if [ -z "$FOUNDRY_PROJECT_ENDPOINT" ]; then
+  echo "ERROR: FOUNDRY_PROJECT_ENDPOINT must be set (or passed as the first argument)."
+  echo "Expected format: https://<account>.services.ai.azure.com/api/projects/<project>"
+  exit 1
+fi
+
+FOUNDRY_PROJECT_ENDPOINT="${FOUNDRY_PROJECT_ENDPOINT%/}"
+FOUNDRY_ACCOUNT_NAME=$(printf "%s" "$FOUNDRY_PROJECT_ENDPOINT" | sed -nE 's#^https?://([^.]+)\.services\.ai\.azure\.com(/.*)?$#\1#p')
+FOUNDRY_PROJECT_NAME=$(printf "%s" "$FOUNDRY_PROJECT_ENDPOINT" | sed -nE 's#^https?://[^/]+/api/projects/([^/?#]+).*$#\1#p')
+
+if [ -z "$FOUNDRY_ACCOUNT_NAME" ] || [ -z "$FOUNDRY_PROJECT_NAME" ]; then
+  echo "ERROR: Could not parse account/project from FOUNDRY_PROJECT_ENDPOINT: $FOUNDRY_PROJECT_ENDPOINT"
+  echo "Expected format: https://<account>.services.ai.azure.com/api/projects/<project>"
   exit 1
 fi
 
@@ -115,45 +122,29 @@ SEARCH_RESOURCE_ID=$(az search service show \
 
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 
-# Resolve Foundry project — supports both resource generations:
-#   New: Microsoft.CognitiveServices/accounts/{account}/projects/{project}
-#   Old: Microsoft.MachineLearningServices/workspaces/{hub}/projects/{project}
-_CS_PROJECT_ID=$(az resource list \
-  --resource-group "$FOUNDRY_RESOURCE_GROUP" \
-  --query "[?type=='Microsoft.CognitiveServices/accounts/projects' && contains(id, '/accounts/${FOUNDRY_ACCOUNT_NAME}/')].id | [0]" \
-  -o tsv 2>/dev/null || echo "")
-
-_AML_PROJECT_ID=$(az resource list \
-  --resource-group "$FOUNDRY_RESOURCE_GROUP" \
-  --query "[?type=='Microsoft.MachineLearningServices/workspaces/projects' && contains(id, '/workspaces/${FOUNDRY_ACCOUNT_NAME}/')].id | [0]" \
-  -o tsv 2>/dev/null || echo "")
-
-if [ -n "$FOUNDRY_PROJECT_NAME" ]; then
-  # Try CognitiveServices first, fall back to MachineLearningServices
-  if [ -n "$_CS_PROJECT_ID" ] || az resource show \
-      --ids "/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.CognitiveServices/accounts/${FOUNDRY_ACCOUNT_NAME}" \
-      --api-version "2025-04-01-preview" --query id -o tsv &>/dev/null; then
-    FOUNDRY_PROJECT_RESOURCE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.CognitiveServices/accounts/${FOUNDRY_ACCOUNT_NAME}/projects/${FOUNDRY_PROJECT_NAME}"
-    FOUNDRY_RESOURCE_PROVIDER="Microsoft.CognitiveServices/accounts"
-  else
-    FOUNDRY_PROJECT_RESOURCE_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.MachineLearningServices/workspaces/${FOUNDRY_ACCOUNT_NAME}/projects/${FOUNDRY_PROJECT_NAME}"
-    FOUNDRY_RESOURCE_PROVIDER="Microsoft.MachineLearningServices/workspaces"
-  fi
-elif [ -n "$_CS_PROJECT_ID" ]; then
-  FOUNDRY_PROJECT_RESOURCE_ID="$_CS_PROJECT_ID"
-  FOUNDRY_RESOURCE_PROVIDER="Microsoft.CognitiveServices/accounts"
-elif [ -n "$_AML_PROJECT_ID" ]; then
-  FOUNDRY_PROJECT_RESOURCE_ID="$_AML_PROJECT_ID"
-  FOUNDRY_RESOURCE_PROVIDER="Microsoft.MachineLearningServices/workspaces"
-fi
+FOUNDRY_PROJECT_RESOURCE_ID=$(az resource list \
+  --query "[?(type=='Microsoft.CognitiveServices/accounts/projects' || type=='Microsoft.MachineLearningServices/workspaces/projects') && (contains(id, '/accounts/${FOUNDRY_ACCOUNT_NAME}/projects/${FOUNDRY_PROJECT_NAME}') || contains(id, '/workspaces/${FOUNDRY_ACCOUNT_NAME}/projects/${FOUNDRY_PROJECT_NAME}'))].id | [0]" \
+  -o tsv)
 
 if [ -z "${FOUNDRY_PROJECT_RESOURCE_ID:-}" ]; then
-  echo "ERROR: Could not resolve Foundry project resource ID."
+  echo "ERROR: Could not resolve Foundry project resource ID from FOUNDRY_PROJECT_ENDPOINT."
+  echo "Endpoint: $FOUNDRY_PROJECT_ENDPOINT"
   exit 1
 fi
 
-if [ -z "$FOUNDRY_PROJECT_NAME" ]; then
-  FOUNDRY_PROJECT_NAME="${FOUNDRY_PROJECT_RESOURCE_ID##*/}"
+FOUNDRY_RESOURCE_GROUP=$(printf "%s" "$FOUNDRY_PROJECT_RESOURCE_ID" | sed -nE 's#^/subscriptions/[^/]+/resourceGroups/([^/]+)/.*$#\1#p')
+
+if [ -z "$FOUNDRY_RESOURCE_GROUP" ]; then
+  echo "ERROR: Could not resolve Foundry resource group from project resource ID: $FOUNDRY_PROJECT_RESOURCE_ID"
+  exit 1
+fi
+
+if [[ "$FOUNDRY_PROJECT_RESOURCE_ID" == *"/providers/Microsoft.CognitiveServices/accounts/"* ]]; then
+  FOUNDRY_RESOURCE_PROVIDER="Microsoft.CognitiveServices/accounts"
+  _ACCOUNT_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.CognitiveServices/accounts/${FOUNDRY_ACCOUNT_NAME}"
+else
+  FOUNDRY_RESOURCE_PROVIDER="Microsoft.MachineLearningServices/workspaces"
+  _ACCOUNT_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.MachineLearningServices/workspaces/${FOUNDRY_ACCOUNT_NAME}"
 fi
 
 echo "Foundry resource provider: $FOUNDRY_RESOURCE_PROVIDER"
@@ -166,7 +157,6 @@ FOUNDRY_MI_PRINCIPAL_ID=$(az resource show \
 
 if [ -z "$FOUNDRY_MI_PRINCIPAL_ID" ]; then
   # Try the account-level identity
-  _ACCOUNT_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/${FOUNDRY_RESOURCE_PROVIDER%%/*}/accounts/${FOUNDRY_ACCOUNT_NAME}"
   FOUNDRY_MI_PRINCIPAL_ID=$(az resource show \
     --ids "${_ACCOUNT_ID}" \
     --api-version "$FOUNDRY_CONNECTION_API_VERSION" \
@@ -192,6 +182,8 @@ CU_KEY="${AZURE_CONTENTUNDERSTANDING_KEY:-}"
 echo ""
 echo "Storage Account       : $STORAGE_ACCOUNT"
 echo "Search Service        : $SEARCH_SERVICE"
+echo "Foundry Endpoint      : $FOUNDRY_PROJECT_ENDPOINT"
+echo "Foundry Resource Group: $FOUNDRY_RESOURCE_GROUP"
 echo "Foundry Account       : $FOUNDRY_ACCOUNT_NAME"
 echo "Foundry Project       : $FOUNDRY_PROJECT_NAME"
 echo "CU Endpoint           : ${CU_ENDPOINT:-<not set — standard mode will use default AI services>}"
