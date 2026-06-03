@@ -1,21 +1,42 @@
 # Fibey Field Ops
 
-Fibey is a runnable demo of an agent that connects to four different
-backend systems — inventory, work orders, a knowledge base, and a status
-dashboard — through **one** endpoint: the **Azure AI Foundry Toolbox**.
+Azure Content Understanding (CU) is a multimodal document understanding
+capability for extracting structure and meaning from diverse document formats
+and layouts.
 
-This sample also includes an optional Content Understanding (CU) extension. CU
-is additive: when CU environment variables are unset, behavior remains the same
-as the base Toolbox flow.
+For official product details, see:
 
-## What the agent can do
+- https://learn.microsoft.com/azure/ai-services/content-understanding/overview
 
-- Look up fiber parts, SKUs, stock levels, and inventory locations
-- View, create, and update work orders
-- Retrieve splicing procedures, safety protocols, and troubleshooting guidance
-- Check current network or service status
+This repository is a fork of:
 
-## Architecture (local mode)
+- https://github.com/dbarkol/fibey-agent
+
+This fork is focused on one goal: demonstrating how Azure Content
+Understanding (CU) improves the agent flow, especially in:
+
+- document upload
+    - Supports a wide range of document types and capture styles, including
+        `.docx`, scanned documents, handwritten text, and complex layout
+        understanding.
+- document classification
+    - Routes each document to the right analyzer path, reducing incorrect tool
+        usage and improving downstream behavior.
+- document extraction quality
+    - Improves structured field accuracy and consistency for downstream agent
+        actions.
+- Foundry IQ standard-mode ingestion
+    - Preserves table structure and improves retrieval reliability for KB-backed
+        answers.
+
+## CU-focused scope in this fork
+
+- CU-powered upload parsing in local-direct mode
+- CU custom analyzer workflow for work orders
+- Foundry IQ ingestion comparison, with emphasis on standard mode (CU-enhanced)
+- Demo-first setup flow through Copilot skill automation
+
+## Architecture (CU demo path)
 
 ```text
 ┌──────────────┐  /api/chat  ┌──────────────────┐  in-proc  ┌──────────────────┐
@@ -34,41 +55,49 @@ as the base Toolbox flow.
 The sample also ships **containerapp** and **hosted** modes — see
 [docs/architecture.md](docs/architecture.md).
 
-## Prerequisites
+## Quickstart (recommended)
+
+Use Copilot Chat command directly:
+
+- `/sample-setup-cu`
+
+The skill will guide and execute (with your confirmation) the full CU demo setup:
+
+1. Install dependencies and bootstrap local `.env`
+2. Check CU prerequisites from Microsoft Learn
+3. Update `.env` CU endpoint values
+4. Confirm Foundry endpoint readiness (or offer `azd up`)
+5. Run `./scripts/setup-knowledge-base.sh --cu-demo`
+6. Verify both CU ingestion indexers are ready
+7. Create CU demo analyzers
+8. Start local-direct services and run health checks
+
+After setup, open the UI:
+
+- http://localhost:5173
+
+## Prerequisites (minimum)
 
 - Python 3.12+
 - Node.js 20+
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
-- Azure CLI (`az`) + Azure Developer CLI (`azd`) — only needed for cloud deploy
-- An Azure AI Foundry project with a deployed model and a configured Toolbox
 
-## Quickstart (local)
+- Azure CLI (`az`)
+- Azure Developer CLI (`azd`) when provisioning/updating Azure resources
 
-```bash
-# 1) Install Python and UI dependencies
-./scripts/setup.sh
+## CU runtime expectations
 
-# 2) Copy and edit environment variables
-cp .env.example .env
+The CU demo flow expects these variables to be configured:
 
-# Fastest no-cloud path (recommended first run): local-direct
-# This bypasses Foundry Toolbox and uses local services on :8001/:8002
-AGENT_MODE=local-direct
+| Variable | Purpose |
+|---|---|
+| `AZURE_CONTENTUNDERSTANDING_ENDPOINT` | Enables CU file upload parsing in chat |
+| `FOUNDRY_IQ_MINIMAL_MCP_URL` | Foundry IQ minimal ingestion endpoint |
+| `FOUNDRY_IQ_STANDARD_MCP_URL` | Foundry IQ standard (CU-enhanced) ingestion endpoint |
 
-# 3) Start the gateway + UI
-AGENT_MODE=local-direct ./scripts/start-dev.sh
+The `/sample-setup-cu` skill sets up and verifies this flow.
 
-# 4) In separate terminals, start local backends
-cd services/inventory-mcp     && uv sync && uv run python server.py
-cd services/work-orders-api   && uv sync && uv run python server.py
-cd services/status-dashboard/public && python -m http.server 8003
-```
-
-After this works, you can switch to `AGENT_MODE=local` and set
-`FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_MODEL`, and `TOOLBOX_MCP_URL` to test the
-real Foundry Toolbox path.
-
-Open the UI at <http://localhost:5173>.
+## Local endpoints
 
 | Service | Local URL |
 |---|---|
@@ -78,74 +107,48 @@ Open the UI at <http://localhost:5173>.
 | Work Orders API | `http://localhost:8002` |
 | Status Dashboard | `http://localhost:8003` |
 
-> **Toolbox URL gotcha:** `TOOLBOX_MCP_URL` should **not** include
-> `?api-version=v1`. The agent code auto-appends it. The Toolbox MCP
-> endpoint requires `api-version=v1` (not a date-based version).
-
-## Deploy to Azure
-
-The full stack (UI, gateway, agent service, work-orders API, inventory MCP,
-AI Search, blob storage) deploys to Azure Container Apps via `azd`:
-
-```bash
-az login
-azd auth login
-azd up
-```
-
-See [docs/deployment.md](docs/deployment.md) for the full deployment guide,
-including FoundryIQ knowledge base setup and post-deploy RBAC.
-
-## Optional Content Understanding (CU)
-
-For CU testing in local development, use `AGENT_MODE=local-direct`.
-This avoids toolbox auth/network issues during file-upload flows and keeps
-the CU path deterministic while iterating on prompts/UI.
-
-CU can be enabled in two layers depending on your goal:
-
-1. Runtime upload parsing for chat requests.
-2. Foundry IQ ingestion comparison (minimal vs standard extraction).
-
-Set optional environment variables in `.env` as needed:
-
-| Variable | Purpose |
-|---|---|
-| `AZURE_CONTENTUNDERSTANDING_ENDPOINT` | Enables CU-based file parsing for uploads in chat. |
-| `FOUNDRY_IQ_MINIMAL_MCP_URL` | Optional MCP URL for minimal-ingestion Foundry IQ KB. |
-| `FOUNDRY_IQ_STANDARD_MCP_URL` | Optional MCP URL for standard (CU-enhanced) Foundry IQ KB. |
-| `AZURE_CONTENTUNDERSTANDING_KEY` | Optional key used by standard indexing setup flows. |
-| `CU_VERBOSE_LOGGING` | Optional verbose CU logs (`1`, `true`, `yes`, `on`). |
-
-When `AZURE_CONTENTUNDERSTANDING_ENDPOINT` is set, the UI enables file
-attachments and CU mode selection. Full walkthrough:
-[content-understanding/README.md](content-understanding/README.md).
-
-## Documentation
+## CU demo references
 
 | Doc | When to read it |
 |---|---|
-| [`docs/toolbox-integration.md`](docs/toolbox-integration.md) | The integration recipe (custom `httpx.Auth`, headers, MCP gotchas) |
-| [`docs/architecture.md`](docs/architecture.md) | Full system diagram, components, streaming protocol, agent modes |
-| [`docs/local-development.md`](docs/local-development.md) | All env vars, running individual services, testing the gateway API |
-| [`docs/deployment.md`](docs/deployment.md) | Azure deployment via `azd`, knowledge base setup, RBAC |
-| [`docs/session-overview.md`](docs/session-overview.md) | High-level narrative for the BRK242 reference copy |
-| [`infra-agent/README.md`](infra-agent/README.md) | Foundry-hosted agent infrastructure notes |
+| [content-understanding/README.md](content-understanding/README.md) | End-to-end CU demo walkthrough and analyzer commands |
+| [services/foundry-iq-docs/content-understanding/FOUNDRY_IQ_SETUP.md](services/foundry-iq-docs/content-understanding/FOUNDRY_IQ_SETUP.md) | Foundry IQ minimal vs standard ingestion setup details |
+| [.github/skills/sample-setup-cu/SKILL.md](.github/skills/sample-setup-cu/SKILL.md) | Copilot skill playbook used by `/sample-setup-cu` |
 
-## Project layout
+## Need the original full-platform guidance?
+
+If you need detailed guidance on Toolbox integration, hosted agents,
+container app deployment, and the broader original sample scope, use the
+upstream repository:
+
+- https://github.com/dbarkol/fibey-agent
+
+You can also refer to the forked docs kept in this repo:
+
+| Doc | Focus |
+|---|---|
+| [docs/toolbox-integration.md](docs/toolbox-integration.md) | Toolbox integration details |
+| [docs/architecture.md](docs/architecture.md) | Full architecture and runtime modes |
+| [docs/deployment.md](docs/deployment.md) | Azure deployment details |
+| [infra-agent/README.md](infra-agent/README.md) | Hosted agent infrastructure notes |
+
+## Copilot skill command
+
+In Copilot Chat, run:
+
+- `/sample-setup-cu`
+
+This is the recommended way to provision CU resources, run setup scripts, and
+start the demo with explicit approval checkpoints.
+
+## Project layout (CU-relevant)
 
 ```text
-src/fibey/                # Python package: agent + gateway
-services/
-  inventory-mcp/          # MCP inventory server (port 8001)
-  work-orders-api/        # FastAPI work-orders service (port 8002)
-  status-dashboard/       # Static service-status dashboard (port 8003)
-  foundry-iq-docs/        # Markdown source for the FoundryIQ knowledge base
-ui/                       # React + TypeScript + Tailwind frontend
-infra/                    # Bicep modules for Container Apps + AI Search + blob
-infra-agent/              # Foundry-hosted agent infra notes
-scripts/                  # setup.sh, start-dev.sh, setup-knowledge-base.sh
-docs/                     # Architecture, deployment, local-dev, integration docs
+content-understanding/                                # CU demo files + analyzer tools
+services/foundry-iq-docs/content-understanding/docs/  # Foundry IQ CU demo docs
+scripts/setup-knowledge-base.sh                       # Creates minimal/standard CU demo KBs
+src/fibey/gateway/                                    # API endpoints, feature flags, health checks
+ui/src/                                               # Chat UI and CU mode selectors
 ```
 
 ## License
