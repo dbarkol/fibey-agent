@@ -2,12 +2,13 @@ import os
 import uuid
 import json
 import logging
+from pathlib import Path
 from typing import AsyncGenerator
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,6 +34,9 @@ FOUNDRY_IQ_MINIMAL_MCP_URL = os.getenv("FOUNDRY_IQ_MINIMAL_MCP_URL", "")
 FOUNDRY_IQ_STANDARD_MCP_URL = os.getenv("FOUNDRY_IQ_STANDARD_MCP_URL", "")
 
 app = FastAPI(title="Fibey Agent Gateway")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEMO_FILES_DIR = PROJECT_ROOT / "content-understanding" / "demo_files"
 
 app.add_middleware(
     CORSMiddleware,
@@ -397,3 +401,17 @@ async def features():
         "cu_modes": ["none", "basic", "work_order"] if cu_available else ["none"],
         "foundry_iq_cu_demo": foundry_iq_cu_demo,
     }
+
+
+@app.get("/api/demo-files/{file_name}")
+async def get_demo_file(file_name: str):
+    """Serve curated local demo files for the UI quick-load button."""
+    allowed_files = {"work_order_fiber_splice.pdf"}
+    if file_name not in allowed_files:
+        raise HTTPException(status_code=404, detail="Demo file not found")
+
+    file_path = DEMO_FILES_DIR / file_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Demo file not found")
+
+    return FileResponse(path=file_path, filename=file_name, media_type="application/pdf")

@@ -13,6 +13,7 @@ export default function App() {
   const [cuMode, setCuMode] = useState<CuMode>("none");
   const [enableFoundryIqCuDemo, setEnableFoundryIqCuDemo] = useState(false);
   const [foundryIqMode, setFoundryIqMode] = useState<FoundryIqMode>("minimal");
+  const [agentMode, setAgentMode] = useState<string>("unknown");
 
   useEffect(() => {
     let cancelled = false;
@@ -26,6 +27,15 @@ export default function App() {
             const f = await response.json() as import("./api/client").Features;
             setEnableAttachments(f.content_understanding);
             setEnableFoundryIqCuDemo(f.foundry_iq_cu_demo);
+            try {
+              const healthResponse = await fetch("/api/health");
+              if (!cancelled && healthResponse.ok) {
+                const h = await healthResponse.json() as { mode?: string };
+                setAgentMode(h.mode ?? "unknown");
+              }
+            } catch {
+              // keep default mode label
+            }
             return;
           }
         } catch {
@@ -50,6 +60,9 @@ export default function App() {
           <h1 className="text-lg font-semibold">Fibey Field Ops</h1>
           <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900 dark:text-blue-300">
             Foundry Toolbox Demo
+          </span>
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
+            Mode: {agentMode}
           </span>
         </div>
         <div className="flex items-center gap-1">

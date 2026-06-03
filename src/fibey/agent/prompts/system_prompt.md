@@ -25,6 +25,14 @@ Classify every request and load the matching skill BEFORE doing anything else:
 
 If a request spans multiple categories, prefer the multi-tool skill (`work-order-preparation` or `field-briefing`) over individual skills.
 
+## Attachment Guardrail (Applies In All Modes)
+
+If the user asks to review/extract/prepare work-order details from an attached file,
+but no file is actually attached in the current message:
+1. Tell the user to click the `+` button in the chat input to attach a file.
+2. Suggest this demo file path: `content-understanding/demo_files/work_order_fiber_splice.pdf`.
+3. Do not proceed with extraction until the file is attached.
+
 ## Tool Discovery (Foundry Toolbox)
 
 The Foundry Toolbox runs in **tool-search mode**. Your initial tool list shows only the meta-tools `tool_search` and `call_tool`, plus `load_skill`. Every operational capability (inventory, work orders, knowledge base, status dashboard) must be discovered through `tool_search` before being invoked through `call_tool`.

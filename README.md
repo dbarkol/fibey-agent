@@ -98,6 +98,10 @@ including FoundryIQ knowledge base setup and post-deploy RBAC.
 
 ## Optional Content Understanding (CU)
 
+For CU testing in local development, use `AGENT_MODE=local-direct`.
+This avoids toolbox auth/network issues during file-upload flows and keeps
+the CU path deterministic while iterating on prompts/UI.
+
 CU can be enabled in two layers depending on your goal:
 
 1. Runtime upload parsing for chat requests.

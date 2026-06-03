@@ -63,6 +63,15 @@ const cuSuggestion: Suggestion = {
   ],
 };
 
+const cuWorkOrderSuggestion: Suggestion = {
+  prompt:
+    "Review an attached file for work order details to prepare for creating a new work order.",
+  tags: [
+    { label: "content-understanding", color: "blue" },
+    { label: "work-order-preparation", color: "red" },
+  ],
+};
+
 const tagColors = {
   red: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
   green: "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300",
@@ -78,7 +87,7 @@ interface PromptSuggestionsProps {
 
 export default function PromptSuggestions({ onSelect, showCuSuggestion = false }: PromptSuggestionsProps) {
   const suggestions = showCuSuggestion
-    ? [cuSuggestion, ...baseSuggestions]
+    ? [cuWorkOrderSuggestion, cuSuggestion, ...baseSuggestions]
     : baseSuggestions;
 
   return (
